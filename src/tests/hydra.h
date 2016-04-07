@@ -5,10 +5,10 @@
 
 struct hydra_subnet {
 	// stores the upper 24 bits of the inet addresses of nodes in this group
-	u32 inet_addr_24;
-	struct hlist_node *node;
-	struct rb_root *tree;
-	struct hlist_head *table;
+	// I need to be careful, of type __be32 when shifting because of subnets
+	__be32 inet_addr_24;
+	struct hlist_node list_next;
+	struct rb_root tree;
 };
 
 struct hydra_group {
@@ -22,16 +22,18 @@ struct hydra_group {
 	int group_init;
 };
 
+struct heracles {
+	struct hydra_group *group;
+	__be32 inet_addr;
+        u32 rtt;
+};
+
+
 #define HYDRA_HASH_BITS 8
 //#define HYDRA_DECLARE(name) HASHTABLE_DECLARE(name, HYDRA_HASH_BITS)
-#define hydra_init(hydra) hash_init(hydra)
+//#define hydra_init(hydra) hash_init(hydra)
 
-static inline void hydra_remove_subnet(struct hydra_subnet *sub)
-{
-	hash_del(sub->node);
-}
-
-struct hydra_group *hydra_add_node(struct hlist_head *, struct heracles *);
+struct hydra_group *hydra_add_node(struct heracles *);
 struct hydra_group *hydra_update(struct heracles *);
 void hydra_remove_node(struct heracles*);
 

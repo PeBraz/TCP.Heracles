@@ -11,7 +11,7 @@
 #include <net/tcp.h>
 
 #include "tcp_heracles.h"
-#include "tcp_hydra.h"
+#include "hydra.h"
 
 
 //http://stackoverflow.com/questions/3060950/how-to-get-ip-address-from-sock-structure-in-c
@@ -31,25 +31,7 @@ void tcp_heracles_init(struct sock *sk)
 
 EXPORT_SYMBOL_GPL(tcp_heracles_init);
 
-/*
-void tcp_vegas_state(struct sock *sk, u8 ca_state)
-{
-	if (ca_state == TCP_CA_Open)
-		vegas_enable(sk);
-	else
-		vegas_disable(sk);
-}
-EXPORT_SYMBOL_GPL(tcp_vegas_state);
 
-/*
- * If the connection is idle and we are restarting,
- * then we don't want to do any Vegas calculations
- * until we get fresh RTT samples.  So when we
- * restart, we reset our Vegas state to a clean
- * slate. After we get acks for this flight of
- * packets, _then_ we can make Vegas calculations
- * again.
- */
 void tcp_heracles_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
 	//vegas does this to erase previous calculations, should adapt it

@@ -4,45 +4,15 @@
 #include <linux/kernel.h>
 #include <linux/rbtree.h>
 
-#include "tcp_heracles.h"
 #include "hydra.h"
 
 #define HYDRA_KEY_MASK 0xF0
 
-
-
-
-struct hydra_subnet {
-	// stores the upper 24 bits of the inet addresses of nodes in this group
-	u32 inet_addr_24;
-	struct hlist_node list_next;
-	struct rb_root *tree;
-};
-
-struct hydra_group {
-	struct rb_node node;
-
-	size_t size;
-	struct hydra_subnet *subnet;
-	//GROUP INFO HERE
-	u32 rtt;
-	//indicate group initialization status
-	int group_init;
-};
-
-
-struct heracles {
-	struct hydra_group *group;
-	u32 inet_addr;
-        int size;
-        u32 rtt;
-};
-
 #define HYDRA_HASH_BITS 8
 static DEFINE_HASHTABLE(hydra, HYDRA_HASH_BITS);
 
-struct hydra_group *hydra_add_node(struct heracles *node);
-int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *node);
+struct hydra_group *hydra_add_node(struct heracles *heracles);
+int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *heracles);
 struct hydra_subnet *hydra_remove_group(struct heracles *heracles, int clear_subnet);
 void hydra_remove_node(struct heracles* heracles);
 struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct heracles *heracles);
@@ -54,27 +24,24 @@ void hydra_update_rcu(struct heracles * node);
 struct hydra_group *hydra_search(struct hydra_subnet *sub, struct heracles *heracles);
 void hydra_remove_subnet(struct hydra_subnet *subnet);
 
-struct hydra_group *hydra_add_node(struct heracles *node)
+struct hydra_group *hydra_add_node(struct heracles *heracles)
 {
 	//are locks needed?
-
-	int bkt;
 	struct hydra_subnet *sub_pt;
-
 	//check if subnet already exists (must have atleast 1 group)
-	hash_for_each(hydra, bkt, sub_pt, list_next) {
+	BUG_ON(!heracles);
+	hash_for_each_possible(hydra, sub_pt, list_next, (heracles->inet_addr & HYDRA_KEY_MASK)) {
 
-		BUG_ON(!sub_pt->tree->rb_node);
 
-		if (sub_pt->inet_addr_24 == node->inet_addr >> 8)
-			return hydra_insert_in_subnet(sub_pt, node);
+		if (sub_pt->inet_addr_24 == heracles->inet_addr >> 8) 
+			return hydra_insert_in_subnet(sub_pt, heracles);
+		
 	}
-
 	//create subnet and group 
-	struct hydra_subnet * new_subnet = hydra_init_subnet(node);
-	hash_add(hydra, &new_subnet->list_next, node->inet_addr & HYDRA_KEY_MASK);
+	struct hydra_subnet * new_subnet = hydra_init_subnet(heracles);
+	hash_add(hydra, &new_subnet->list_next, heracles->inet_addr & HYDRA_KEY_MASK);
 	
-	struct rb_node * root_node = new_subnet->tree->rb_node;
+	struct rb_node * root_node = new_subnet->tree.rb_node;
 	return container_of(root_node, struct hydra_group, node);
 }
 
@@ -85,7 +52,10 @@ struct hydra_group *hydra_add_node(struct heracles *node)
 // (should be made easy to tune)
 int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *node)
 {
-	return node->rtt > group->rtt * 0.9 && node->rtt < group->rtt * 1.1;
+	//return node->rtt > group->rtt * 0.9 && node->rtt < group->rtt * 1.1;
+	if ((node->rtt * 10) < (group->rtt * 5)) return -1;
+	if ((node->rtt * 10) > (group->rtt * 15)) return 1;
+	return 0;
 }
 
 
@@ -94,15 +64,16 @@ int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *node)
 
 struct hydra_subnet *hydra_remove_group(struct heracles *heracles, int clear_subnet)
 {
-	BUG_ON(heracles || heracles->size > 1);
+	BUG_ON(!heracles || heracles->group->size != 1);
 
 	struct hydra_subnet * subnet = heracles->group->subnet;
 
-	rb_erase(&heracles->group->node, subnet->tree);
+	rb_erase(&heracles->group->node, &subnet->tree);
 	kfree(heracles->group);
 	heracles->group = NULL;
+	
 
-	if (clear_subnet && !subnet->tree->rb_node) {// if subnet has a empty tree with no groups inside
+	if (clear_subnet && !subnet->tree.rb_node) {// if subnet has a empty tree with no groups inside
 		hydra_remove_subnet(subnet);
 		return NULL;
 	}
@@ -119,7 +90,6 @@ void hydra_remove_subnet(struct hydra_subnet *subnet)
 	hash_del(&subnet->list_next);
 }
 
-
 void hydra_remove_node(struct heracles* heracles)
 {
 	if (heracles->group->size == 1)
@@ -135,8 +105,7 @@ void hydra_remove_node(struct heracles* heracles)
  */
 struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct heracles *heracles)
 {
-
-	struct rb_node **node = &(heracles->group->subnet->tree->rb_node), *parent = NULL;
+	struct rb_node **node = &(sub->tree.rb_node), *parent = NULL;
 
 	while (*node) {
 		struct hydra_group * group = container_of(*node, struct hydra_group, node); //check this one is node, the other is heracles
@@ -156,15 +125,17 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 
 
 	struct hydra_group *group = hydra_init_group(sub, heracles);
+	heracles->group = group;
 
 	rb_link_node(&group->node, parent, node);
-	rb_insert_color(&group->node, group->subnet->tree);
+	rb_insert_color(&group->node, &group->subnet->tree);
 	return group;
 }
 
 //updates the old group
 //inserting the new node inside the group
-void hydra_insert_in_group(struct hydra_group *group, struct heracles *node) {
+void hydra_insert_in_group(struct hydra_group *group, struct heracles *heracles)
+{
 	 group->size += 1;
 	 //should do + stuff
 }
@@ -190,8 +161,10 @@ struct hydra_subnet *hydra_init_subnet(struct heracles *heracles)
 	BUG_ON(!sub);
 	*sub = (struct hydra_subnet) {
 		.inet_addr_24 = heracles->inet_addr >> 8,
-		.tree = &RB_ROOT
+		.tree = RB_ROOT
 	};
+
+
 	hydra_insert_in_subnet(sub, heracles);
 	return sub;
 }
@@ -210,44 +183,22 @@ struct hydra_group *hydra_update(struct heracles *heracles)
 {
 
 	 //  --  lock tree  --
+	BUG_ON(!heracles);
+	BUG_ON(!heracles->group);
 
 	if (heracles->group->size == 1) {
+		BUG_ON(!heracles);
 		hydra_remove_group(heracles, 0);
+		BUG_ON(!heracles);
 		return hydra_add_node(heracles);
 	}
 	return hydra_insert_in_subnet(heracles->group->subnet, heracles);
-	/*
-	struct rb_node **node = &(heracles->group->subnet->tree->rb_node), *parent = NULL;
-
-	while (*node) {
-		struct hydra_group * group = container_of(node, struct hydra_group, node);
-		int res = hydra_cmp_with_interval(group, heracles);
-
-		parent = *node;
-		if (res < 0) {
-			node = &((*node)->rb_left);
-
-		} else if (res > 0) {
-			node = &((*node)->rb_right);
-		} else {
-			hydra_insert_in_group(group, heracles);
-			return group;
-		}
-	}
-
-	//create a new group
-	group = hydra_init_group(subnet, heracles);
-
-	rb_link_node(&group->node, parent, node);
-	rb_insert_color(&group->node, group->subnet->tree);
-	return group;*/
-
 }
 
 
 struct hydra_group *hydra_search(struct hydra_subnet *sub, struct heracles *heracles)
 {
-	struct rb_node *node = sub->tree->rb_node;
+	struct rb_node *node = sub->tree.rb_node;
 
 	while (node) {
 		struct hydra_group * group = container_of(node, struct hydra_group, node);
