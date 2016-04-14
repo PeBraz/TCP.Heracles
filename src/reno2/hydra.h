@@ -13,6 +13,7 @@ struct hydra_subnet {
 
 struct hydra_group {
 	struct rb_node node;
+	struct list_head heracles_list;
 
 	size_t size;
 	struct hydra_subnet *subnet;
@@ -26,7 +27,12 @@ struct heracles {
 	struct hydra_group *group;
 	__be32 inet_addr;
         u32 rtt;
+	//number of acks since init
 	size_t acks;
+
+	//for window increase after group leave
+	int is_limited;
+	u32 excess;
 };
 
 
@@ -37,5 +43,4 @@ struct heracles {
 struct hydra_group *hydra_add_node(struct heracles *);
 struct hydra_group *hydra_update(struct heracles *);
 void hydra_remove_node(struct heracles*);
-
 #endif

@@ -14,18 +14,20 @@
 #include "hydra.h"
 
 
-//http://stackoverflow.com/questions/3060950/how-to-get-ip-address-from-sock-structure-in-c
 
 
 void tcp_heracles_init(struct sock *sk)
 {
-	struct heracles *heracles = inet_csk_ca(sk);
-
-	BUG_ON(!hydra);
-
+	__be32 ip_addr = sk->sk_daddr;
+	struct tcp_heracles *heracles = inet_csk_ca(sk);
+	*heracles = {
+		.group=0,
+		.ip_addr=sk->sk_addr,
+		rtt=0
+	};
 	//need to find a group for this socket
 	//need to be sure that, on restart, the previous iteration of this connection was correctly removed from its group
-	heracles->group = hydra_add_node(hydra, heracles);	
+	hydra_add_node(heracles);	
 }
 
 
@@ -55,7 +57,7 @@ void tcp_heracles_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 }
 EXPORT_SYMBOL_GPL(tcp_vegas_cwnd_event);
 
-void tcp_vegas_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
+void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 {
 	struct heracles *heracles = inet_csk_ca(sk);
 
@@ -82,35 +84,24 @@ static void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	
 }
 
-/* Extract info for Tcp socket info provided via netlink. */
-size_t tcp_vegas_get_info(struct sock *sk, u32 ext, int *attr,
-			  union tcp_cc_info *info)
-{
-
-}
 EXPORT_SYMBOL_GPL(tcp_vegas_get_info);
 
 static struct tcp_congestion_ops tcp_heracles __read_mostly = {
-	.init		= tcp_heracles_state_init,
-	.ssthresh	= tcp_reno_ssthresh,
-	.cong_avoid	= tcp_vegas_cong_avoid,
-	.pkts_acked	= tcp_vegas_pkts_acked,
-	.set_state	= tcp_vegas_state,
-	.cwnd_event	= tcp_vegas_cwnd_event,
+	.init		= tcp_heracles_init,
+	.ssthresh	= tcp_heracles_ssthresh,
+	.cong_avoid	= tcp_heracles_cong_avoid,
+	//.pkts_acked	= tcp_vegas_pkts_acked,
+	//.set_state	= tcp_vegas_state,
+	//.cwnd_event	= tcp_vegas_cwnd_event,
 	//.get_info	= tcp_vegas_get_info,
 	.owner		= THIS_MODULE,
 	.name		= "heracles",
 };
 
 
-//declare hydra structure
-HYDRA_DECLARE(hydra); 
-
 
 static int __init tcp_heracles_register(void)
 {
-	//do define in header
-	hydra_init(hydra);	// initializes hydra structure
 	tcp_register_congestion_control(&tcp_heracles);
 	return 0;
 }
@@ -118,7 +109,6 @@ static int __init tcp_heracles_register(void)
 
 static void __exit tcp_heracles_unregister(void)
 {
-	//tcp_heracles_delete_hydra(hydra);
 	tcp_unregister_congestion_control(&tcp_heracles);
 }
 

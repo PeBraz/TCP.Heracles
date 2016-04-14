@@ -3,6 +3,7 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/rbtree.h>
+#include <linux/mutex.h>
 
 #include "hydra.h"
 
@@ -13,25 +14,38 @@
 #define HYDRA_HASH_BITS 8
 static DEFINE_HASHTABLE(hydra, HYDRA_HASH_BITS);
 
-struct hydra_group *hydra_add_node(struct heracles *heracles);
+static DEFINE_MUTEX(hydra_lock);
+
+
+
+struct hydra_group *__hydra_add_node(struct heracles *heracles);
 int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *heracles);
 struct hydra_subnet *hydra_remove_group(struct heracles *heracles, int clear_subnet);
-void hydra_remove_node(struct heracles* heracles);
+void __hydra_remove_node(struct heracles* heracles);
 struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct heracles *heracles);
 void hydra_insert_in_group(struct hydra_group *group, struct heracles *node);
 struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracles * heracles);
 struct hydra_subnet *hydra_init_subnet(struct heracles *heracles);
-struct hydra_group *hydra_update(struct heracles *heracles);
-void hydra_update_rcu(struct heracles * node);
+struct hydra_group *__hydra_update(struct heracles *heracles);
 struct hydra_group *hydra_search(struct hydra_subnet *sub, struct heracles *heracles);
 void hydra_remove_subnet(struct hydra_subnet *subnet);
 
+
+
 struct hydra_group *hydra_add_node(struct heracles *heracles)
+{
+	mutex_lock(hydra_lock);
+	__hydra_add_node(heracles);
+	mutex_unlock(hydra_lock);
+}
+
+struct hydra_group *__hydra_add_node(struct heracles *heracles)
 {
 	//are locks needed?
 	struct hydra_subnet *sub_pt;
 	//check if subnet already exists (must have atleast 1 group)
 	BUG_ON(!heracles);
+
 	hash_for_each_possible(hydra, sub_pt, list_next, (heracles->inet_addr & HYDRA_KEY_MASK)) {
 
 
@@ -65,6 +79,14 @@ int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *node)
 //	@clear_subnet	indicate if subnet should be cleared from the table if the tree becomes empty
 
 struct hydra_subnet *hydra_remove_group(struct heracles *heracles, int clear_subnet)
+{
+	mutex_lock(hydra_lock);
+	__hydra_remove_group(heracles, clear_subnet);
+	mutex_unlock(hydra_lock);
+}
+
+
+struct hydra_subnet *__hydra_remove_group(struct heracles *heracles, int clear_subnet)
 {
 	BUG_ON(!heracles || heracles->group->size != 1);
 
@@ -150,7 +172,8 @@ struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracle
 	*group = (struct hydra_group) {
 		.subnet = subnet,
 		.size = 1,
-		.group_init = 0
+		.group_init = 0,
+		.heracles_list = LIST_HEAD_INIT(group->heracles_list);
 	};
 	return group;
 }
@@ -171,17 +194,14 @@ struct hydra_subnet *hydra_init_subnet(struct heracles *heracles)
 	return sub;
 }
 
-
-// TODO: enable RCU locking, while inserting/traversing tree
-
-void hydra_update_rcu(struct heracles * node) {
-	//lockrcu
-	hydra_update(node);
-	//unlockrcu
+struct hydra_group *hydra_update(struct heracles *heracles)
+{
+	mutex_lock(hydra_lock);
+	__hydra_update(heracles);
+	mutex_unlock(hydra_lock);
 }
 
-
-struct hydra_group *hydra_update(struct heracles *heracles)
+struct hydra_group *__hydra_update(struct heracles *heracles)
 {
 
 	 //  --  lock tree  --
@@ -192,7 +212,7 @@ struct hydra_group *hydra_update(struct heracles *heracles)
 		BUG_ON(!heracles);
 		hydra_remove_group(heracles, 0);
 		BUG_ON(!heracles);
-		return hydra_add_node(heracles);
+		return __hydra_add_node(heracles);
 	}
 	return hydra_insert_in_subnet(heracles->group->subnet, heracles);
 }
