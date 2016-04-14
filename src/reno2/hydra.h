@@ -21,17 +21,24 @@ struct hydra_group {
 	u32 rtt;
 	//indicate group initialization status
 	int group_init;
+	//for calculating 
+	u32 ssthresh_total;
+	/*number of connections in congestion avoidace */
+	size_t in_ca;
 };
 
 struct heracles {
+	struct list_head node;
 	struct hydra_group *group;
 	__be32 inet_addr;
         u32 rtt;
 	//number of acks since init
 	size_t acks;
 
-	//for window increase after group leave
+//for window increase after group leave
+	//indicates if window is congestion limited, so it can increase
 	int is_limited;
+	/* other connections update this field to specify the amount it should increase*/
 	u32 excess;
 };
 

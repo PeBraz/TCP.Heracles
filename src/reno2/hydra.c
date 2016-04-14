@@ -14,13 +14,13 @@
 #define HYDRA_HASH_BITS 8
 static DEFINE_HASHTABLE(hydra, HYDRA_HASH_BITS);
 
-static DEFINE_MUTEX(hydra_lock);
-
+static struct mutex hydra_lock;
 
 
 struct hydra_group *__hydra_add_node(struct heracles *heracles);
 int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *heracles);
 struct hydra_subnet *hydra_remove_group(struct heracles *heracles, int clear_subnet);
+void hydra_remove_node(struct heracles* heracles);
 void __hydra_remove_node(struct heracles* heracles);
 struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct heracles *heracles);
 void hydra_insert_in_group(struct hydra_group *group, struct heracles *node);
@@ -34,26 +34,24 @@ void hydra_remove_subnet(struct hydra_subnet *subnet);
 
 struct hydra_group *hydra_add_node(struct heracles *heracles)
 {
-	mutex_lock(hydra_lock);
-	__hydra_add_node(heracles);
-	mutex_unlock(hydra_lock);
+	mutex_lock(&hydra_lock);
+	struct hydra_group *g = __hydra_add_node(heracles);
+	mutex_unlock(&hydra_lock);
+	return g;
+
 }
 
 struct hydra_group *__hydra_add_node(struct heracles *heracles)
 {
-	//are locks needed?
 	struct hydra_subnet *sub_pt;
-	//check if subnet already exists (must have atleast 1 group)
 	BUG_ON(!heracles);
-
+	//I should probably shift the key here, but i really don't care about unexpected collisions 
 	hash_for_each_possible(hydra, sub_pt, list_next, (heracles->inet_addr & HYDRA_KEY_MASK)) {
-
 
 		if (sub_pt->inet_addr_24 == (heracles->inet_addr & HYDRA_SUBNET_MASK))
 			return hydra_insert_in_subnet(sub_pt, heracles);
 		
 	}
-	//create subnet and group 
 	struct hydra_subnet * new_subnet = hydra_init_subnet(heracles);
 	hash_add(hydra, &new_subnet->list_next, heracles->inet_addr & HYDRA_KEY_MASK);
 	
@@ -80,14 +78,6 @@ int hydra_cmp_with_interval(struct hydra_group *group, struct heracles *node)
 
 struct hydra_subnet *hydra_remove_group(struct heracles *heracles, int clear_subnet)
 {
-	mutex_lock(hydra_lock);
-	__hydra_remove_group(heracles, clear_subnet);
-	mutex_unlock(hydra_lock);
-}
-
-
-struct hydra_subnet *__hydra_remove_group(struct heracles *heracles, int clear_subnet)
-{
 	BUG_ON(!heracles || heracles->group->size != 1);
 
 	struct hydra_subnet * subnet = heracles->group->subnet;
@@ -110,12 +100,20 @@ struct hydra_subnet *__hydra_remove_group(struct heracles *heracles, int clear_s
 //
 void hydra_remove_subnet(struct hydra_subnet *subnet)
 {
-	//  -- can rcu lock
 	hash_del(&subnet->list_next);
 }
 
-void hydra_remove_node(struct heracles* heracles)
+void hydra_remove_node(struct heracles *heracles)
 {
+	mutex_lock(&hydra_lock);
+	__hydra_remove_node(heracles);
+	mutex_unlock(&hydra_lock);
+}
+
+
+void __hydra_remove_node(struct heracles* heracles)
+{
+	list_del(&heracles->node);
 	if (heracles->group->size == 1)
 		hydra_remove_group(heracles, 1);
 	else {
@@ -160,8 +158,9 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 //inserting the new node inside the group
 void hydra_insert_in_group(struct hydra_group *group, struct heracles *heracles)
 {
-	 group->size += 1;
-	 //should do + stuff
+	group->size += 1;
+	list_add(&heracles->node, &group->heracles_list);
+	//should do + stuff
 }
 
 //initializes a new group,
@@ -173,8 +172,11 @@ struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracle
 		.subnet = subnet,
 		.size = 1,
 		.group_init = 0,
-		.heracles_list = LIST_HEAD_INIT(group->heracles_list);
+		.ssthresh_total = 0,
+		.in_ca = 0,
+		.heracles_list = LIST_HEAD_INIT(group->heracles_list)
 	};
+	list_add(&heracles->node, &group->heracles_list);
 	return group;
 }
 
@@ -196,15 +198,15 @@ struct hydra_subnet *hydra_init_subnet(struct heracles *heracles)
 
 struct hydra_group *hydra_update(struct heracles *heracles)
 {
-	mutex_lock(hydra_lock);
-	__hydra_update(heracles);
-	mutex_unlock(hydra_lock);
+	mutex_lock(&hydra_lock);
+	struct hydra_group *g = __hydra_update(heracles);
+	mutex_unlock(&hydra_lock);
+	return g;
 }
 
 struct hydra_group *__hydra_update(struct heracles *heracles)
 {
 
-	 //  --  lock tree  --
 	BUG_ON(!heracles);
 	BUG_ON(!heracles->group);
 

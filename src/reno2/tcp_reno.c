@@ -20,7 +20,9 @@ void tcp_heracles_init(struct sock *sk)
 		.group=0,
 		.inet_addr=sk->sk_daddr,
 		.rtt=0,
-		.acks=0
+		.acks=0,
+		.is_limited=0,
+		.excess=0
 	};
 	hydra_add_node(heracles);	
 
@@ -86,8 +88,8 @@ void tcp_reno2_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		/* if there is atleast 1 connection on congestion avoidance 
 		 * and this connection already has a good SRTT sample, skip slow start
 		 */
-		if (heracles->group->on_ca > 0 && heracles->acks >= MIN_ACKS)
-			tcp
+		//if (heracles->group->on_ca > 0 && heracles->acks >= MIN_ACKS)
+		//	tcp
 		acked = tcp_reno2_slow_start(tp, acked);
 		if (!acked)
 			return;
