@@ -6,7 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
-//#include <netdb.h>
+
 #include <signal.h>
 #include <assert.h>
 #include <pthread.h>
@@ -18,6 +18,8 @@
 #define SERVER_BACKLOG 10
 #define PORT 8000
 
+#define CONG_PROTO_FLAG "--cong"
+#define UPLOAD_FILE_FLAG "--upload"
 
 static struct _server {
 	int sock;
@@ -30,6 +32,8 @@ struct client_conn {
 	pthread_t thr_id;
 	int sock;
 	struct sockaddr_in addr;
+
+	char *filename;
 };
 
 
@@ -47,10 +51,23 @@ void close_socket_at_signal(int n)
 
 void *client_thread(void * args) 
 {
+#define CLIENT_BUFFER_SIZE 1024
+
 	struct client_conn * client = (struct client_conn*)args;
 	printf("Client %u started.\n", client->id);
-	//do nothing for now
+
+
+	char buffer[CLIENT_BUFFER_SIZE];
+	FILE * f = fopen(client->filename, "r");
+	int bytes_red;	
+	do {
+		bytes_red = fread(buffer, 1, CLIENT_BUFFER_SIZE, f);
+		if (ferror(f)) break;
+		send(client->sock, buffer, bytes_red, 0);
+	}while (bytes_red == CLIENT_BUFFER_SIZE);
 	
+	fclose(f);
+
 	if (shutdown(client->sock, SHUT_RDWR) == -1) 
 		fprintf(stderr, "Failed to drop connection nicely. (%d)\n", errno);	
 	
@@ -62,19 +79,38 @@ void *client_thread(void * args)
 
 int main(int argc, char *argv[]) 
 {
+	int i;
+	char *cong_proto_name = NULL;
+	char *upload_filename = NULL;
+	for (i=1; i < argc; i+=2) {
+		if (!strcmp(CONG_PROTO_FLAG, argv[i])) {
+			if (i + 1 >= argc) goto cmdl_cleanup;
+			cong_proto_name = strdup(argv[i + 1]);
+		} else if (!strcmp(UPLOAD_FILE_FLAG, argv[i])) {
+			if (i + 1 >= argc) goto cmdl_cleanup;
+			upload_filename = strdup(argv[i+1]);
+		} else {
+			puts("usage: ./server [--upload <filename>]");
+			puts("	--cong <tcp-congestion-name> ");
+			goto cmdl_cleanup;
+		}
+	}
 
+	if (!upload_filename) {
+		puts("\"--upload\" required");
+		goto cmdl_cleanup; 
+	}
 	int err;
 
 	server.sock = socket(AF_INET, SOCK_STREAM, 0);
 	if (server.sock == -1) {
 		fprintf(stderr, "Failed to create socket (%d)\n", errno);
-		return 1;
+		goto cmdl_cleanup;
 	}
 	
 	signal(SIGINT, close_socket_at_signal); //terminal stop
 		
 	//Change congestion protocol
-	char * cong_proto_name = NULL; //"reno2";
 	if (cong_proto_name){
 		err = setsockopt(server.sock, IPPROTO_TCP, TCP_CONGESTION,
 			cong_proto_name, strlen(cong_proto_name));
@@ -138,20 +174,27 @@ int main(int argc, char *argv[])
 				 
 			server.clients[j] = client;
 			client->id = j;
+			client->filename = upload_filename;
 			server.client_count++;
 
 			err = pthread_create(&client->thr_id, NULL, client_thread, (void*)client);
 			if (err != 0) {
-				puts("Failure to create client thread");
+				fprintf(stderr, "Failure to create client thread(%d).\n", err);
 				server.client_count--;
 				server.clients[j] = 0;
 				free(client);
 			}
+			err = pthread_detach(client->thr_id);
+			if (err != 0)
+				fprintf(stderr, "Failed to detach thread, memory leak imminent(%d).\n", err);
 		}
 		sleep(1);
 	}
 
 cleanup:
 	close(server.sock);
+cmdl_cleanup:
+	if (upload_filename) free(upload_filename);
+	if (cong_proto_name) free(cong_proto_name);
 	return 0;
 }

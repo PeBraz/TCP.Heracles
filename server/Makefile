@@ -1,1 +1,7 @@
-gcc --std=c99 -g -o main main.c -pthread
+
+
+all:
+	gcc -Wall  -g -o server main.c -pthread
+
+clean: 
+	rm server
