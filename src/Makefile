@@ -1,3 +1,7 @@
+delay=50ms
+int=nk_tap_pebraz
+up=10
+down=10
 
 obj-m += heracles.o
 heracles-objs := hydra.o tcp_heracles.o
@@ -13,14 +17,16 @@ upload:
 
 
 limit:
-	tc qdisc add dev lo root tbf rate 1kbit latency 50ms burst 3000
+	tc qdisc add dev $(int) root handle 1: htb default 1
+	tc class add dev $(int) parent 1: classid 1:1 htb rate 1Mbit ceil 1Mbit
+	tc qdisc add dev $(int) parent 1:1 handle 2: pfifo limit 10
 
 unlimit: 
-	tc qdisc delete dev lo root tbf rate 1kbit latency 50ms burst 3000
+	tc qdisc del dev $(int) root
 
 install:
-	dmesg -C
 	insmod heracles.ko
+	dmesg -C
 
 uninstall:
 	rmmod heracles.ko

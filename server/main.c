@@ -16,8 +16,9 @@
 #include <time.h>
 
 #define SERVER_BACKLOG 10
-#define PORT 8000
+#define DEFAULT_PORT 8000
 
+#define PORT_FLAG "--port"
 #define CONG_PROTO_FLAG "--cong"
 #define UPLOAD_FILE_FLAG "--upload"
 
@@ -39,6 +40,7 @@ struct client_conn {
 
 void close_socket_at_signal(int n)
 {
+	puts("\nInterrupt: closing socket");
 	close(server.sock);
 	
 	int i;
@@ -60,12 +62,16 @@ void *client_thread(void * args)
 	char buffer[CLIENT_BUFFER_SIZE];
 	FILE * f = fopen(client->filename, "r");
 	int bytes_red;	
+	int total = 0;
 	do {
 		bytes_red = fread(buffer, 1, CLIENT_BUFFER_SIZE, f);
 		if (ferror(f)) break;
+		total += bytes_red; 
+		printf("%dB\n", total);
+
+		//sleep(1);//usleep(100000)
 		send(client->sock, buffer, bytes_red, 0);
 	}while (bytes_red == CLIENT_BUFFER_SIZE);
-	
 	fclose(f);
 
 	if (shutdown(client->sock, SHUT_RDWR) == -1) 
@@ -73,7 +79,7 @@ void *client_thread(void * args)
 	
 	server.clients[client->id] = 0;
 	server.client_count--;
-	free(client);
+	free(client);	
 	return NULL;
 }
 
@@ -82,6 +88,8 @@ int main(int argc, char *argv[])
 	int i;
 	char *cong_proto_name = NULL;
 	char *upload_filename = NULL;
+	int port = DEFAULT_PORT;
+
 	for (i=1; i < argc; i+=2) {
 		if (!strcmp(CONG_PROTO_FLAG, argv[i])) {
 			if (i + 1 >= argc) goto cmdl_cleanup;
@@ -89,9 +97,14 @@ int main(int argc, char *argv[])
 		} else if (!strcmp(UPLOAD_FILE_FLAG, argv[i])) {
 			if (i + 1 >= argc) goto cmdl_cleanup;
 			upload_filename = strdup(argv[i+1]);
-		} else {
+		} else if (!strcmp(PORT_FLAG, argv[i])) {
+			if (i + 1 >= argc) goto cmdl_cleanup;
+			port = atol(argv[i+1]);
+		}
+		else {
 			puts("usage: ./server [--upload <filename>]");
 			puts("	--cong <tcp-congestion-name> ");
+			puts("	--port <number> ");
 			goto cmdl_cleanup;
 		}
 	}
@@ -125,7 +138,7 @@ int main(int argc, char *argv[])
 
 	my_addr.sin_family = AF_INET;
 	my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-	my_addr.sin_port = htons(PORT);
+	my_addr.sin_port = htons(port);
 
 
 	err = bind(server.sock, (struct sockaddr*)&my_addr,
@@ -145,7 +158,7 @@ int main(int argc, char *argv[])
 	server.client_count = 0;
 	memset(server.clients, 0, 10 * sizeof(struct client_conn*));
 
-	printf("Waiting on port %d...\n", PORT);
+	printf("Waiting on port %d...\n", port);
 
 	int new_conns;
 	struct pollfd poll_event = {.fd=server.sock, .events=POLLIN}; 

@@ -32,6 +32,7 @@ struct heracles {
 	struct list_head node;
 	struct hydra_group *group;
 	__be32 inet_addr;
+	int id;
         u32 rtt;
 	//number of acks since init
 	size_t acks;

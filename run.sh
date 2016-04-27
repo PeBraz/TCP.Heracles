@@ -6,7 +6,9 @@ if [ ! -f "$img" ] ; then
 	fallocate -l 10M heracles.img
 fi
 
-make -C src install
+cd src
+make install
+cd ..
 ./server/server --upload $img --cong heracles
 
 

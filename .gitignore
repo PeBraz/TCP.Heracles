@@ -32,4 +32,16 @@
 *.dSYM/
 
 
+#module files
+*.cmd
+.tmp_versions
+Module.symvers
+*.mod.c
+*.order
+
+#others
 *.swp
+log/*
+*.img
+
+

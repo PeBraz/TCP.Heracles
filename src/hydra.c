@@ -13,7 +13,7 @@
 
 #define HYDRA_HASH_BITS 8
 static DEFINE_HASHTABLE(hydra, HYDRA_HASH_BITS);
-
+static int heracles_counter = 1;
 static DEFINE_SPINLOCK(hydra_lock);
 
 struct hydra_group *__hydra_add_node(struct heracles *heracles);
@@ -44,7 +44,10 @@ struct hydra_group *__hydra_add_node(struct heracles *heracles)
 {
 	struct hydra_subnet *sub_pt;
 	BUG_ON(!heracles);
-	//I should probably shift the key here, but i really don't care about unexpected collisions 
+
+	if (!heracles->id)
+		heracles->id = heracles_counter++;
+
 	hash_for_each_possible(hydra, sub_pt, list_next, (heracles->inet_addr & HYDRA_KEY_MASK)) {
 
 		if (sub_pt->inet_addr_24 == (heracles->inet_addr & HYDRA_SUBNET_MASK))

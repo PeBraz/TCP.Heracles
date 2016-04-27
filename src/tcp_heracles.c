@@ -13,17 +13,14 @@ MODULE_DESCRIPTION("Heracles");
 //minimum number of acks for hydra to start 
 #define MIN_ACKS 3 
 
-#define HERACLES_SOCK_DEBUG(tp)\
-	printk(KERN_INFO "SOCKET INFO (%s):", __func__);\
-	printk(KERN_INFO "srtt: %u - mdev: %u", tp->srtt_us, tp->mdev_us);\
-	printk(KERN_INFO "maxedev: %u - var: %u", tp->mdev_max_us, tp->rttvar_us);\
-	printk(KERN_INFO "cwnd: %u - ssthresh: %u", tp->snd_cwnd, tp->snd_ssthresh);
-
+#define HERACLES_SOCK_DEBUG(tp, her)\
+	printk(KERN_INFO "%p %u %d %d %d %d %d %d\n", her, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh, her->rtt, tp->srtt_us, tp->mdev_us);
 
 void tcp_heracles_init(struct sock *sk)
 {
 	struct heracles *heracles = inet_csk_ca(sk);
 	*heracles = (struct heracles){
+		.id=0,
 		.group=0,
 		.inet_addr=sk->sk_daddr,
 		.rtt=0,
@@ -113,7 +110,7 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	struct heracles *heracles = inet_csk_ca(sk);
 
 
-	HERACLES_SOCK_DEBUG(tp);
+	HERACLES_SOCK_DEBUG(tp, heracles);
 
 	if (!tcp_is_cwnd_limited(sk))
 		return;
@@ -147,12 +144,11 @@ EXPORT_SYMBOL_GPL(tcp_heracles_cong_avoid);
 
 void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 {
-	printk(KERN_INFO "acked: %u - rtt:%d", acked, rtt);
 	struct heracles *heracles = inet_csk_ca(sk);
-	struct tcp_sock *tp = tcp_sk(sk);
-	HERACLES_SOCK_DEBUG(tp);
+	//struct tcp_sock *tp = tcp_sk(sk);
 
 	heracles->acks += acked;
+	heracles->rtt = rtt;
 
 	if (!hydra_remains_in_group(heracles)) {
 		/* do cleanup in old group before updating */
