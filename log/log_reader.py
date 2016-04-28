@@ -75,7 +75,27 @@ def log_to_csv(log_data, intercal=False):
 			d.setdefault(idn, []).append("{} {}".format(i if intercal else d_id[idn],line))
 	return d
 
+def log_to_csv_with_time(log_data, intercal=False):
+	d = {}
+	time = 0
+	for i, line in enumerate(log_data.split('\n')):
 
+		patt = re.compile("\[(\d+\.\d+)\] \w+ \d+ \d+ \d+ \d+ \d+ \d+ \d+")
+		match = re.match(patt, line)
+		if match:
+			#if not time_init: time_init = float(match.group(1))
+			time = float(match.group(1)) ## remove floating time from timestamp
+			idn = line.split()[1] ## remove log identifier (element 2, because 1 is time)
+			line = log_line_cleanse(line)
+			d.setdefault(idn, []).append("{} {}".format(time, line.split("]")[1].strip()))
+	return d
+
+#shift right rtt value 3 times
+def log_line_cleanse(line):
+	line_parts = line.split()
+	new_srtt = str(int(line_parts[7]) >> 3)
+	new_mdev = str(int(line_parts[8]) >> 2)
+	return ' '.join(line_parts[:7] + [new_srtt, new_mdev])
 
 help_str = ("usage: ./log_reader.py <log file>\n"
 			"options:\n"
@@ -90,12 +110,13 @@ help_str = ("usage: ./log_reader.py <log file>\n"
 #	@returns  name root of the generated .csv files
 #
 
-def log_reader(logname, join=False):
+def log_reader(logname, join=False, timestamp=False):
 	fname = logname.split('.')[0]
 	files = []
 	
 	with open(logname) as log:
-		conn_log = log_to_csv(log.read(), join)
+		conn_log = log_to_csv_with_time(log.read(), join) if timestamp\
+		 else log_to_csv(log.read(), join)
 		
 	for i, logs in conn_log.iteritems():
 		files.append("{}_{}".format(fname, i))
@@ -114,24 +135,28 @@ if __name__ == '__main__':
 		print help_str
 		sys.exit(0)
 
-	join = False
-	for arg in sys.argv[:-1]:
+	join, time = False, False
+	for arg in sys.argv[1:]:
 		if arg == "--join":
 			join = True 
+		elif arg == "--time":
+			time = True
+		else:
+			logname = arg
 
-	logname = sys.argv[-1]
+
 	fname = logname.split('.')[0]
-	files = log_reader(logname, join)
-
-
-	sc2 = create_script(fname + "_rtt", ["rtt","srtt","mdev"]*len(files), files*3, [RTT,SRTT,MDEV]*len(files)) 
-	sc1 = create_script(fname + "_cwnd", ["cwnd", "cwnd"], files, [CWND]*len(files));
-	scripts = [sc1, sc2]	
-
-
+	files = log_reader(logname, join, time)
+	if not files:
+		print "Wrong file given, no files generated."
+		sys.exit(1)
 
 
 	if join:
+
+		sc2 = create_script(fname + "_rtt", ["rtt","srtt","mdev"]*len(files), files*3, [RTT,SRTT,MDEV]*len(files)) 
+		sc1 = create_script(fname + "_cwnd", ["cwnd", "cwnd"], files, [CWND]*len(files));
+		scripts = [sc1, sc2]	
 
 		for script in scripts:
 			with open("{}.gp".format(fname), 'w+') as f:

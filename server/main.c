@@ -62,14 +62,9 @@ void *client_thread(void * args)
 	char buffer[CLIENT_BUFFER_SIZE];
 	FILE * f = fopen(client->filename, "r");
 	int bytes_red;	
-	int total = 0;
 	do {
 		bytes_red = fread(buffer, 1, CLIENT_BUFFER_SIZE, f);
 		if (ferror(f)) break;
-		total += bytes_red; 
-		printf("%dB\n", total);
-
-		//sleep(1);//usleep(100000)
 		send(client->sock, buffer, bytes_red, 0);
 	}while (bytes_red == CLIENT_BUFFER_SIZE);
 	fclose(f);
