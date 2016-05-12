@@ -18,7 +18,7 @@ upload:
 
 limit:
 	tc qdisc add dev $(int) root handle 1: htb default 1
-	tc class add dev $(int) parent 1: classid 1:1 htb rate 5Mbit ceil 1Mbit
+	tc class add dev $(int) parent 1: classid 1:1 htb rate 5Mbit ceil 5Mbit
 	tc qdisc add dev $(int) parent 1:1 handle 2: pfifo limit 10
 
 unlimit: 

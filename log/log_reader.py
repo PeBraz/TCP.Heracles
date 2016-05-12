@@ -1,9 +1,12 @@
 #!/usr/bin/python
+from __future__ import division
+
 
 import re
 import os
 import sys
 from subprocess import call
+from collections import OrderedDict
 
 COUNT=1
 HID=2
@@ -11,44 +14,28 @@ IP=3
 PKTS=4
 CWND=5
 SSTHRESH=6
-RTT=7
-SRTT=8
-MDEV=9
-
+MSS=7
+RTT=8
+SRTT=9
+MDEV=10
+THROUGHPUT=11
 
 gnuplot_base_plot = "\"{}.csv\" using 1:{} with linespoints title \"{}\""
 
-gnuplot_base = ("set terminal jpeg size 1280,720\n"
-	"set output \"{fname}.jpeg\"\n"
+gnuplot_base = ("set terminal eps\n"
+	"set output \"{fname}.eps\"\n"
 	"set size 1,1\n"
 	"set grid y\n"
 	"plot {plots}\n"
 	"exit")
-
-#
-#gnuplot_cwnd = ("set terminal jpeg size 1280,720\n"
-#	"set output \"{fname}_cwnd.jpeg\"\n"
-#	"set size 1,1\n"
-#	"set grid y\n"
-#	"plot \"{fname}.csv\" using 1:5 with linespoints title \"{fname}\"\n"
-#	"exit")
-#
-#
-#create_script("string_rtt", [rtt, srtt, mdev],[string.csv],[RTT, SRTT, MDEV])
-#gnuplot_rtt = ("set terminal jpeg size 1280,720\n"
-#	"set output \"{fname}_rtt.jpeg\"\n"
-#	"set size 1,1\n"
-#	"set grid y\n"
-#	"plot \"{fname}.csv\" using 1:7 with linespoints title \"rtt\","
-#	" \"{fname}.csv\" using 1:8 with linespoints title \"srtt\","
-#	" \"{fname}.csv\" using 1:9 with linespoints title \"mdev\"\n"
-#	"exit")
 
 
 def create_script(name, name_list, csv_list, attr_list):
 	plots = ', '.join([gnuplot_base_plot.format(*vals) 
 				for vals in zip(csv_list, attr_list, name_list)])
 	return gnuplot_base.format(fname=name, plots=plots)
+
+# plot_throughput = lambda name: 
 
 #
 # @join boolean		if true then numbering will intercalate index values
@@ -63,39 +50,46 @@ def create_script(name, name_list, csv_list, attr_list):
 #	|3	|		|5	|		VS. 	|2	|		|2	|
 #	|4	|		|6	|				|3	|		|3	|
 #
-def log_to_csv(log_data, intercal=False):
-	d = {}
-	d_id = {}
-	for i, line in enumerate(log_data.split('\n')):
-		if re.match( "\w+ \d+ \d+ \d+ \d+ \d+ \d+ \d+", line):
-			idn = line.split()[0]
-			if not d_id.has_key(idn):
-				d_id[idn] = 0
-			d_id[idn] += 1
-			d.setdefault(idn, []).append("{} {}".format(i if intercal else d_id[idn],line))
-	return d
+
+log_keys=["ts", "id", "ip", "out", "cwnd", "ss", "mss", "rtt", "srtt", "mdev"]
 
 def log_to_csv_with_time(log_data, intercal=False):
 	d = {}
 	time = 0
 	for i, line in enumerate(log_data.split('\n')):
 
-		patt = re.compile("\[(\d+\.\d+)\] \w+ \d+ \d+ \d+ \d+ \d+ \d+ \d+")
+		patt = re.compile("\[ *(?P<{}>\d+\.\d+)\] (?P<{}>\w+) (?P<{}>\d+) (?P<{}>\d+) "
+			"(?P<{}>\d+) (?P<{}>\d+) (?P<{}>\d+) (?P<{}>\d+) (?P<{}>\d+) (?P<{}>\d+)".format(*log_keys))
 		match = re.match(patt, line)
 		if match:
 			#if not time_init: time_init = float(match.group(1))
-			time = float(match.group(1)) ## remove floating time from timestamp
-			idn = line.split()[1] ## remove log identifier (element 2, because 1 is time)
-			line = log_line_cleanse(line)
-			d.setdefault(idn, []).append("{} {}".format(time, line.split("]")[1].strip()))
+			time = float(match.group("ts")) ## remove floating time from timestamp
+			idn = match.group("id") ## remove log identifier ( [time] id ... )
+			line = log_line_cleanse(match)
+			d.setdefault(idn, []).append(line)
 	return d
 
-#shift right rtt value 3 times
-def log_line_cleanse(line):
-	line_parts = line.split()
-	new_srtt = str(int(line_parts[7]) >> 3)
-	new_mdev = str(int(line_parts[8]) >> 2)
-	return ' '.join(line_parts[:7] + [new_srtt, new_mdev])
+
+# shift right rtt value 3 times
+# shift mdev twice
+# adds instant throughput /the throughput has a error, congestion window value may include losses
+# the throughput calculation is done as bits per second
+def log_line_cleanse(line_match):
+	d = OrderedDict(zip(log_keys, line_match.groups()))
+	d["srtt"] = str(int(d["srtt"]) >> 3)
+	d["mdev"] = str(int(d["mdev"]) >> 2)
+	d["throughput"] = str((int(d["cwnd"]) * int(d["mss"]) * 8 )/ (int(d["rtt"]) / 10**6))
+	if float(d["throughput"]) > 10000000:
+		d["throughput"] = "0"
+	##should assert order is correct
+	return ' '.join(d.values())
+
+
+"""
+def mathis_throughput(ploss, mss, rtt):
+	c = math.sqrt(3/2)
+	return mss / rtt * c / math.sqrt(ploss)
+"""
 
 help_str = ("usage: ./log_reader.py <log file>\n"
 			"options:\n"
@@ -135,7 +129,7 @@ if __name__ == '__main__':
 		print help_str
 		sys.exit(0)
 
-	join, time = False, False
+	join, time = False, True ## oops
 	for arg in sys.argv[1:]:
 		if arg == "--join":
 			join = True 
@@ -155,8 +149,9 @@ if __name__ == '__main__':
 	if join:
 
 		sc2 = create_script(fname + "_rtt", ["rtt","srtt","mdev"]*len(files), files*3, [RTT,SRTT,MDEV]*len(files)) 
-		sc1 = create_script(fname + "_cwnd", ["cwnd", "cwnd"], files, [CWND]*len(files));
-		scripts = [sc1, sc2]	
+		sc1 = create_script(fname + "_cwnd", ["cwnd"]*len(files), files, [CWND]*len(files));
+		sc3 = create_script(fname + "_throughput", ["tp"]*len(files), files, [THROUGHPUT]*len(files))
+		scripts = [sc1, sc2, sc3]	
 
 		for script in scripts:
 			with open("{}.gp".format(fname), 'w+') as f:
@@ -167,7 +162,10 @@ if __name__ == '__main__':
 		for file in files:	
 			sc1 = create_script(file + "_rtt", ["rtt", "srtt", "mdev"], [file]*3, [RTT,SRTT,MDEV])
 			sc2 = create_script(file + "_cwnd", ["cwnd"], [file], [CWND])
-			for script in [sc1, sc2]:
+			sc3 = create_script(file + "_throughput", ["tp"], file, [THROUGHPUT])
+			scripts = [sc1, sc2, sc3]
+
+			for script in scripts:
 				with open("{}.gp".format(file), 'w+') as f:
 					f.write(script.format(fname=file))
 

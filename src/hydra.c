@@ -142,6 +142,7 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 		} else if (res > 0) {
 			node = &((*node)->rb_right);
 		} else {
+			printk(KERN_INFO "FOUND PREEXISTING GROUP h:%p; g:%p;\n",heracles, group);
 			hydra_insert_in_group(group, heracles);
 			return group;
 		}
@@ -151,6 +152,7 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 	struct hydra_group *group = hydra_init_group(sub, heracles);
 	heracles->group = group;
 
+	//printk(KERN_INFO "CREATING NEW GROUP h:%p; g:%p;",heracles, group);
 	rb_link_node(&group->node, parent, node);
 	rb_insert_color(&group->node, &group->subnet->tree);
 	return group;
@@ -161,6 +163,7 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 void hydra_insert_in_group(struct hydra_group *group, struct heracles *heracles)
 {
 	group->size += 1;
+	group->rtt = heracles->rtt; //maybe do an average?
 	heracles->group = group;
 	list_add(&heracles->node, &group->heracles_list);
 }
@@ -176,6 +179,7 @@ struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracle
 		.group_init = 0,
 		.ssthresh_total = 0,
 		.in_ca_count = 0,
+		.rtt = heracles->rtt, 	//this could be updated
 		.heracles_list = LIST_HEAD_INIT(group->heracles_list)
 	};
 	list_add(&heracles->node, &group->heracles_list);
@@ -200,6 +204,8 @@ struct hydra_subnet *hydra_init_subnet(struct heracles *heracles)
 
 struct hydra_group *hydra_update(struct heracles *heracles)
 {
+	if (hydra_remains_in_group(heracles)) return heracles->group; //no need to update, will stay in same group
+
 	spin_lock(&hydra_lock);
 	struct hydra_group *g = __hydra_update(heracles);
 	spin_unlock(&hydra_lock);
