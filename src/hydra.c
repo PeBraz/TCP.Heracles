@@ -31,6 +31,7 @@ void hydra_remove_subnet(struct hydra_subnet *subnet);
 
 
 
+
 struct hydra_group *hydra_add_node(struct heracles *heracles)
 {
 	spin_lock(&hydra_lock);
@@ -116,10 +117,13 @@ void hydra_remove_node(struct heracles *heracles)
 void __hydra_remove_node(struct heracles* heracles)
 {
 	list_del(&heracles->node);
-	if (heracles->group->size == 1)
+	if (heracles->group->size == 1){
+		printk(KERN_INFO "REMOVED GROUP h:%p; g:%p;\n", heracles, heracles->group);
 		hydra_remove_group(heracles, 1);
-	else {
+	} else {
+		printk(KERN_INFO "LEFT GROUP h:%p; g:%p size:%d;\n", heracles, heracles->group, heracles->group->size-1);
 		--heracles->group->size;
+		heracles->group = NULL;
 		//should i do more stuff here???
 	}
 }
@@ -151,7 +155,7 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 
 	struct hydra_group *group = hydra_init_group(sub, heracles);
 	heracles->group = group;
-
+	printk(KERN_INFO "CREATED GROUP h:%p; g:%p;\n", heracles, group);
 	//printk(KERN_INFO "CREATING NEW GROUP h:%p; g:%p;",heracles, group);
 	rb_link_node(&group->node, parent, node);
 	rb_insert_color(&group->node, &group->subnet->tree);
@@ -178,6 +182,7 @@ struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracle
 		.size = 1,
 		.group_init = 0,
 		.ssthresh_total = 0,
+		.cwnd_total = 0,
 		.in_ca_count = 0,
 		.rtt = heracles->rtt, 	//this could be updated
 		.heracles_list = LIST_HEAD_INIT(group->heracles_list)
@@ -224,7 +229,8 @@ struct hydra_group *__hydra_update(struct heracles *heracles)
 	BUG_ON(!heracles->group);
 
 	if (heracles->group->size == 1) {
-		hydra_remove_group(heracles, 0);
+		__hydra_remove_node(heracles);
+		//hydra_remove_group(heracles, 0); // the 0 is so that the subnet wasnt cleared, as a performance thing, but fuck it
 		return __hydra_add_node(heracles);
 	}
 	return hydra_insert_in_subnet(heracles->group->subnet, heracles);

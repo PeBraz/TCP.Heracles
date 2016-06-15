@@ -22,8 +22,8 @@ THROUGHPUT=11
 
 gnuplot_base_plot = "\"{}.csv\" using 1:{} with linespoints title \"{}\""
 
-gnuplot_base = ("set terminal eps\n"
-	"set output \"{fname}.eps\"\n"
+gnuplot_base = ("set terminal png\n"
+	"set output \"{fname}.png\"\n"
 	"set size 1,1\n"
 	"set grid y\n"
 	"plot {plots}\n"

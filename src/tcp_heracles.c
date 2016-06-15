@@ -12,9 +12,13 @@ MODULE_DESCRIPTION("TCP Heracles");
 
 //minimum number of acks for hydra to start 
 #define MIN_ACKS 3 
-
+// error while deciding on stalling an upper connection (cwnd stalls if CWND_ERROR + cwnd average > cwnd )
+#define CWND_ERROR 10
 #define HERACLES_SOCK_DEBUG(tp, her)\
 	printk(KERN_INFO "%p %u %d %d %d %d %d %d %d\n", her, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh, tp->mss_cache, her->rtt, tp->srtt_us, tp->mdev_us);
+
+void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh);
+void heracles_try_leave_ca(struct heracles *heracles);
 
 void tcp_heracles_init(struct sock *sk)
 {
@@ -29,18 +33,19 @@ void tcp_heracles_init(struct sock *sk)
 		.excess=0,
 		.in_ca=0,
 		.old_ssthresh=0,
+		.old_cwnd=0,
 	};
-	//Cant have a group while initializing, needs rtt estimates first
-	//hydra_add_node(heracles);	
-
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_init);
 
 void tcp_heracles_release(struct sock *sk) 
 {
 	struct heracles *heracles = inet_csk_ca(sk);
-	if (heracles->group)
+	if (heracles->group) {
+		heracles->group->cwnd_total -= heracles->old_cwnd;
+	    heracles_try_leave_ca(heracles);
 		hydra_remove_node(heracles);
+	}
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_release);
 
@@ -49,9 +54,8 @@ void tcp_heracles_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
 	if (event == CA_EVENT_CWND_RESTART ||
 	    event == CA_EVENT_TX_START) {
-	    struct heracles *heracles = inet_csk_ca(sk);
-	    if (heracles->group)
-			hydra_remove_node(heracles);
+
+	   tcp_heracles_release(sk);
 		tcp_heracles_init(sk);
 	}
 }
@@ -73,7 +77,7 @@ EXPORT_SYMBOL_GPL(tcp_reno2_slow_start);
 
 
 void tcp_reno2_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked)
-{
+{	
 	if (tp->snd_cwnd_cnt >= w) {
 		tp->snd_cwnd_cnt = 0;
 		tp->snd_cwnd++;
@@ -91,27 +95,49 @@ void tcp_reno2_cong_avoid_ai(struct tcp_sock *tp, u32 w, u32 acked)
 EXPORT_SYMBOL_GPL(tcp_reno2_cong_avoid_ai);
 
 
-void heracles_try_enter_ca(struct heracles *heracles)
+void heracles_update_group_ssthresh(struct heracles *heracles, u32 ssthresh) {
+	heracles->group->ssthresh_total -= heracles->old_ssthresh;
+	heracles->group->ssthresh_total += ssthresh;
+	heracles->old_ssthresh = ssthresh;
+}
+
+/*
+ * whenever a connection is updating congestion window, it checks if it was previously in CA
+ * If it was, then it updates the ssthresh for the group
+ * If not it will enter CA and update the group
+ *
+ */
+void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh)
 {
-	if (heracles->in_ca) return;
-	printk(KERN_INFO "ENTER CA %p; oldss: %u\n", heracles->old_ssthresh);
+	if (heracles->in_ca) {
+		//printk(KERN_INFO "(IN CA) Updading ssthresh: %p - %u\n", heracles, heracles->group->ssthresh_total);
+		heracles->group->ssthresh_total -= heracles->old_ssthresh;
+		heracles->group->ssthresh_total += ssthresh;
+		heracles->old_ssthresh = ssthresh;
+		return;
+	}
+	//if (heracles->old_ssthresh != 0) printk(KERN_INFO "Problem here");
+
 	heracles->in_ca = 1;
-	heracles->group->in_ca_count++; 
+	heracles->group->in_ca_count++;
+	heracles->group->ssthresh_total += ssthresh;
+	heracles->old_ssthresh = ssthresh;
 }
 
 void heracles_try_leave_ca(struct heracles *heracles) 
 {
 	if (!heracles->in_ca) return;
-	printk(KERN_INFO "LEAVE CA %p; oldss:%u\n", heracles->old_ssthresh);
+
 	heracles->in_ca = 0;
 	heracles->group->in_ca_count--; 
 	heracles->group->ssthresh_total -= heracles->old_ssthresh;
+	//printk(KERN_INFO "(Leave CA) Updading ssthresh: %p - %u\n", heracles, heracles->group->ssthresh_total);
 	heracles->old_ssthresh = 0;
 }
 
 static inline u32 heracles_ssthresh_estimate(struct heracles *heracles)
 {
-	printk(KERN_INFO "ss estimation for %p: (ss - %u; size - %u;) \n", heracles, heracles->group->ssthresh_total, heracles->group->size);
+	//printk(KERN_INFO "ss estimation for %p: (ss - %u; size - %u;) \n", heracles, heracles->group->ssthresh_total, heracles->group->size);
 	return heracles->group->ssthresh_total / heracles->group->size;
 }
 
@@ -124,9 +150,9 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 
 	HERACLES_SOCK_DEBUG(tp, heracles);
 
-	/*
-	 * If the connection is looking for a group
-	 */
+
+	
+	// If the connection is looking for a group
 	if (!heracles->group && heracles->acks >= MIN_ACKS)
 		hydra_add_node(heracles);	
 
@@ -135,22 +161,23 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		return;
 
 	/* In "safe" area, increase. */
-	if (tp->snd_cwnd <= tp->snd_ssthresh) {
+	if (tp->snd_cwnd < tp->snd_ssthresh) {
 		heracles_try_leave_ca(heracles);
 
-		/* if there is atleast 1 connection on congestion avoidance 
-		 * and this connection already has a good SRTT sample, skip slow start
-		 */
-		 //IT is impossible for heracles to be in CA here!!
-		if (heracles->group && heracles->group->in_ca_count > 0 && heracles->acks >= MIN_ACKS) {
-			printk(KERN_INFO "SS SKIP %p;  in_ca: %d\n", heracles, heracles->group->in_ca_count);
+		// Slow Start Skip Conditions
+		//	1. connection is in a group (atleast 3 acks for RTT estimation)
+		//	2. alteast another connection is in Congestion Avoidance
+		//	3. Jumping slow start will increase the connection's congestion window
+
+		if (heracles->group
+			&& heracles->group->in_ca_count > 0 
+			&& heracles_ssthresh_estimate(heracles) > tp->snd_cwnd) {
+
 			tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
 			tp->snd_cwnd = min(tp->snd_cwnd_clamp, tp->snd_ssthresh);
-
-			heracles_try_enter_ca(heracles);
-			heracles->group->ssthresh_total += tp->snd_ssthresh;
-			heracles->old_ssthresh = tp->snd_ssthresh;
+			heracles_try_enter_ca(heracles, tp->snd_ssthresh);
 			return;
+		
 
 		} else {
 			acked = tcp_reno2_slow_start(tp, acked);
@@ -161,39 +188,35 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 
 	/* In dangerous area, increase slowly. */
 	if (heracles->group) {
-		heracles_try_enter_ca(heracles);
-		/*update group ssthresh*/
-		heracles->group->ssthresh_total -= heracles->old_ssthresh;
-		heracles->group->ssthresh_total += tp->snd_ssthresh;
-		heracles->old_ssthresh = tp->snd_ssthresh;	
-	}	
+		heracles_try_enter_ca(heracles, tp->snd_ssthresh);
 
+
+		if (heracles_ssthresh_estimate(heracles) < tp->snd_ssthresh)
+			tp->snd_cwnd -= (tp->snd_ssthresh - heracles_ssthresh_estimate(heracles));
+		else 
+			tp->snd_cwnd += (heracles_ssthresh_estimate(heracles) - tp->snd_ssthresh);
+
+		tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
+		heracles_update_group_ssthresh(heracles, tp->snd_ssthresh);
+	}
 	tcp_reno2_cong_avoid_ai(tp, tp->snd_cwnd, acked);
+
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_cong_avoid);
 
 void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 {
 	struct heracles *heracles = inet_csk_ca(sk);
-	//struct tcp_sock *tp = tcp_sk(sk);
-
 	heracles->acks += acked;
 	heracles->rtt = rtt;
 
 	if (!heracles->group) return;
 
 	if (!hydra_remains_in_group(heracles)) {
-		/* do cleanup in old group before updating */
 		heracles->acks = acked; 	
-		heracles_try_leave_ca(heracles);
-		printk(KERN_INFO "CHANGING %p; g:%p\n", heracles, heracles->group);
+		heracles->group->cwnd_total -= heracles->old_cwnd;
+		heracles_try_leave_ca(heracles); 
 	}
-	else printk(KERN_INFO "NOT CHANGING GROUP %p; g:%p \n", heracles, heracles->group); /*else if (heracles->acks >= MIN_ACKS){	
-		
-		if (heracles->group->in_ca_count)
-			tp->ssthresh = heracles->group->ssthresh_total 
-					/ (group->in_ca + 1);
-	}*/
 	hydra_update(heracles);
 
 }
@@ -202,7 +225,9 @@ EXPORT_SYMBOL_GPL(tcp_heracles_pkts_acked);
 u32 tcp_reno2_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
-	return max(tp->snd_cwnd >> 1U, 2U);
+	//const struct heracles *h = inet_csk_ca(sk);
+	return max(tp->snd_cwnd >> 1U, 2U); 
+	//(tcp_in_initial_slowstart(tp) || !h->group)? max(tp->snd_cwnd >> 1U, 2U): tp->snd_ssthresh;
 }
 
 EXPORT_SYMBOL(tcp_reno2_ssthresh);
@@ -223,7 +248,7 @@ struct tcp_congestion_ops tcp_heracles = {
 static int __init heracles_init(void)
 {
 	BUILD_BUG_ON(sizeof(struct heracles) > ICSK_CA_PRIV_SIZE);
-	printk(KERN_INFO "Initializing our hero and savior: HERACLES!!");
+	printk(KERN_INFO "Initializing our hero and savior: HERACLES!!\n");
 	tcp_register_congestion_control(&tcp_heracles);
 	return 0;
 }
@@ -233,7 +258,7 @@ static int __init heracles_init(void)
 static void __exit heracles_exit(void)
 {
 	tcp_unregister_congestion_control(&tcp_heracles);
-	printk(KERN_INFO "Heracles cleanup success.");
+	printk(KERN_INFO "Heracles cleanup success.\n");
 }
 
 

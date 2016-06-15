@@ -53,22 +53,33 @@ void close_socket_at_signal(int n)
 
 void *client_thread(void * args) 
 {
-#define CLIENT_BUFFER_SIZE 1024
+#define CLIENT_BUFFER_SIZE 1048576
 
 	struct client_conn * client = (struct client_conn*)args;
 	printf("Client %u started.\n", client->id);
 
 
-	char buffer[CLIENT_BUFFER_SIZE];
+	//char buffer[CLIENT_BUFFER_SIZE];
 	FILE * f = fopen(client->filename, "r");
-	int bytes_red;	
-	do {
-		bytes_red = fread(buffer, 1, CLIENT_BUFFER_SIZE, f);
-		if (ferror(f)) break;
-		send(client->sock, buffer, bytes_red, 0);
-	}while (bytes_red == CLIENT_BUFFER_SIZE);
-	fclose(f);
+	fseek(f, 0, SEEK_END);
+	int f_size = ftell(f); 
+	char *buffer = malloc(f_size);
 
+	rewind(f);
+	int bytes_read = fread(buffer, 1, f_size, f);
+	fclose(f);
+	int status = send(client->sock, buffer, bytes_read, 0);
+	if (status == -1) {
+		fprintf(stderr, "Failed to send. (%d)\n", errno);
+	} if (status == 0)  {}
+
+	//int status;
+	/*do {
+		if (ferror(f)) break;
+		send(client->sock, buffer, bytes_red, TCP_NODELAY);
+		//fprintf(stderr, "status: %d err?:%d\n", status, (status == -1)?errno:0);
+	}while (bytes_red == CLIENT_BUFFER_SIZE);*/
+	free(buffer);
 	if (shutdown(client->sock, SHUT_RDWR) == -1) 
 		fprintf(stderr, "Failed to drop connection nicely. (%d)\n", errno);	
 	
@@ -126,6 +137,20 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "Failed to change congestion protocol (%d)\n", errno);
 			goto cleanup;
 		}
+	}
+
+
+	int wmemsize = 33554432;
+	err = setsockopt(server.sock, SOL_SOCKET, SO_SNDBUF, (void*)&wmemsize, sizeof(int));
+	if (err == -1) {
+		fprintf(stderr, "Failed to set new value to writer buffer meme size %d\n", errno);
+		goto cleanup;
+	}
+	int rmemsize = 33554432;
+	err = setsockopt(server.sock, SOL_SOCKET, SO_SNDBUF, (void*)&rmemsize, sizeof(int));
+	if (err == -1) {
+		fprintf(stderr, "Failed to set new value to read buffer meme size %d\n", errno);
+		goto cleanup;
 	}
 
 	struct sockaddr_in my_addr;

@@ -12,6 +12,7 @@ struct hydra_subnet {
 	struct rb_root tree;
 };
 
+
 struct hydra_group {
 	struct rb_node node;
 	struct list_head heracles_list;
@@ -24,6 +25,7 @@ struct hydra_group {
 	int group_init;
 	//for calculating 
 	u32 ssthresh_total;
+	u32 cwnd_total;
 	/*number of connections in congestion avoidace */
 	size_t in_ca_count;
 };
@@ -33,12 +35,13 @@ struct heracles {
 	struct hydra_group *group;
 	__be32 inet_addr;
 	int id;
-        u32 rtt;
+    u32 rtt;
 	//number of acks since init
 	size_t acks;
 	
 	int in_ca;
 	u32 old_ssthresh;
+	u32 old_cwnd;
 //for window increase after group leave
 	//indicates if window is congestion limited, so it can increase
 	int is_limited;

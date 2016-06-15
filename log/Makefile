@@ -2,7 +2,7 @@
 
 
 clean:
-	rm *.jpeg
+	rm *.jpeg || rm *.png
 	rm *.csv
 	rm *.gp
 

@@ -18,8 +18,22 @@ struct server{
 
 void *client_thread(void *args)
 {
+#define CLIENT_BUFFER_SIZE 1048576
 	struct server *s = (struct server*)args;
 	int sock = socket(AF_INET, SOCK_STREAM, 0);
+
+
+	int wmemsize = 33554432, rmemsize = 33554432;
+	int err = setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (void*)&wmemsize, sizeof(int));
+	if (err == -1) {
+		fprintf(stderr, "Failed to set new value to writer buffer mem size %d\n", errno);
+		return 0;
+	}
+	err = setsockopt(sock, SOL_SOCKET, SO_SNDBUF, (void*)&rmemsize, sizeof(int));
+		if (err == -1) {
+		fprintf(stderr, "Failed to set new value to read buffer mem size %d\n", errno);
+		return 0;
+	}
 
 
 	struct sockaddr_in my_addr;
@@ -29,17 +43,17 @@ void *client_thread(void *args)
 	my_addr.sin_family = AF_INET;
 	my_addr.sin_port = htons(s->port);
 	
-	int err = connect(sock, (struct sockaddr*)&my_addr, sizeof(struct sockaddr_in));
+	err = connect(sock, (struct sockaddr*)&my_addr, sizeof(struct sockaddr_in));
 	if (err == -1) {
 		fprintf(stderr, "Failed to connect to server (%d).\n", errno);
 		free(s);
 		return NULL;
 	}
 
-	char buffer[1024];
+	char buffer[CLIENT_BUFFER_SIZE];
 	ssize_t r_bytes;
 	do {
-		r_bytes = recv(sock, buffer, 1024, 0);
+		r_bytes = recv(sock, buffer, CLIENT_BUFFER_SIZE, 0);
 		if (r_bytes == -1) {
 			fprintf(stderr, "Failed to receive (%d).\n", errno);
 		}
@@ -64,6 +78,8 @@ int main(int argc, char *argv[]) {
 	int port = 8000;
 	int clients = 1;
 	pthread_t client_buff[10];
+
+
 
 	switch (argc)  {
 	case 3: 
