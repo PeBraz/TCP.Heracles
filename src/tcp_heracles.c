@@ -21,7 +21,7 @@ void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh);
 void heracles_try_leave_ca(struct heracles *heracles);
 void heracles_add_event(struct heracles*);
 bool heracles_is_event(struct heracles*);
-
+void heracles_in_group_release(struct heracles*);
 
 void tcp_heracles_init(struct sock *sk)
 {
@@ -46,10 +46,12 @@ void tcp_heracles_release(struct sock *sk)
 {
 	struct heracles *heracles = inet_csk_ca(sk);
 	if (heracles->group) {
-		//heracles->group->cwnd_total -= heracles->old_cwnd;
-	    heracles_try_leave_ca(heracles);
+
+		//	node leaves group without removing ssthresh information
+		// 	signals event, so other connections can get the ssthresh that was released
+
+	    heracles_in_group_release(heracles);
 	    heracles_add_event(heracles);
-	    printk(KERN_INFO "new event 2 - %p\n", heracles);
 		hydra_remove_node(heracles);
 	}
 }
@@ -161,6 +163,13 @@ void heracles_try_leave_ca(struct heracles *heracles)
 	heracles->old_ssthresh = 0;
 }
 
+
+void heracles_in_group_release(struct heracles *heracles) 
+{
+	if (heracles->in_ca) 
+		heracles->group->in_ca_count--;
+}
+
 static inline u32 heracles_ssthresh_estimate(struct heracles *heracles)
 {
 	//printk(KERN_INFO "ss estimation for %p: (ss - %u; size - %u;) \n", heracles, heracles->group->ssthresh_total, heracles->group->size);
@@ -213,7 +222,6 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 			tp->snd_cwnd = min(tp->snd_cwnd_clamp, ssthresh);
 			heracles_update_group_ssthresh(heracles, ssthresh);
 			heracles_add_event(heracles);
-			printk(KERN_INFO "new event 1 - %p\n", heracles);
 			return;
 		
 		} else {
@@ -230,27 +238,14 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		if (heracles_is_event(heracles) 
 			&& tp->snd_cwnd > heracles_ssthresh_estimate(heracles)) {
 			
-			printk("There is an event (%p) new ss: %u\n", heracles, heracles_ssthresh_estimate(heracles));
+			//printk("There is an event (%p) new ss: %u\n", heracles, heracles_ssthresh_estimate(heracles));
 			tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
 			tp->snd_cwnd = tp->snd_ssthresh;
 		} else
 		if (tp->snd_cwnd < heracles_ssthresh_estimate(heracles)) {
 			tp->snd_cwnd = heracles_ssthresh_estimate(heracles);
 			heracles_add_event(heracles);	
-			printk(KERN_INFO "new event 3 - %p\n", heracles);
 		}
-		//printk(KERN_INFO "ESTIMATE: %p (%u, %u)\n", heracles, heracles_ssthresh_estimate(heracles), tp->snd_ssthresh);
-		//tp->snd_cwnd = heracles_cwnd_estimate(heracles);
-		//heracles_update_group_cwnd(heracles, tp->snd_cwnd);
-		/* 
-		if (heracles_ssthresh_estimate(heracles) < tp->snd_cwnd)
-			tp->snd_cwnd -= (tp->snd_ssthresh - heracles_ssthresh_estimate(heracles));
-		else if (heracles_ssthresh_estimate(heracles) > tp->snd_ssthresh)
-			tp->snd_cwnd += (heracles_ssthresh_estimate(heracles) - tp->snd_ssthresh);
-		*/
-		//tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
-		//heracles_update_group_ssthresh(heracles, heracles_ssthresh_estimate(heracles));
-		//heracles_try_enter_ca(heracles, tp->snd_ssthresh);
 	}
 	tcp_reno2_cong_avoid_ai(tp, tp->snd_cwnd, acked);
 
@@ -285,8 +280,6 @@ u32 tcp_reno2_ssthresh(struct sock *sk)
 		u32 new_ssthresh = max(tp->snd_cwnd >> 1U, 2U);
 		heracles_update_group_ssthresh(h, new_ssthresh);
 		heracles_add_event(h);
-		printk(KERN_INFO "new event 4 - \n");
-		//printk(KERN_INFO "LOSS DETECT %p\n; new ss: %u\n",h, heracles_ssthresh_estimate(h));
 		return max(heracles_ssthresh_estimate(h), 2U);
 	}
 	return max(tp->snd_cwnd >> 1U, 2U); 
