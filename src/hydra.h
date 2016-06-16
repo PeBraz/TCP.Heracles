@@ -28,6 +28,7 @@ struct hydra_group {
 	u32 cwnd_total;
 	/*number of connections in congestion avoidace */
 	size_t in_ca_count;
+	u32 ts;	//use to signal sshtresh events, when ts increments all connections must reduce cwnd to ssthresh estimate
 };
 
 struct heracles {
@@ -47,6 +48,7 @@ struct heracles {
 	int is_limited;
 	/* other connections update this field to specify the amount it should increase*/
 	u32 excess;
+	u32 ts;	// local event counter
 };
 
 
@@ -58,6 +60,8 @@ static inline bool hydra_remains_in_group(struct heracles *heracles)
 {
 	return !hydra_cmp_with_interval(heracles->group, heracles);
 }
+
+
 
 struct hydra_group *hydra_add_node(struct heracles *);
 struct hydra_group *hydra_update(struct heracles *);

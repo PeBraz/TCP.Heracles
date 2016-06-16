@@ -156,11 +156,11 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 	struct hydra_group *group = hydra_init_group(sub, heracles);
 	heracles->group = group;
 	printk(KERN_INFO "CREATED GROUP h:%p; g:%p;\n", heracles, group);
-	//printk(KERN_INFO "CREATING NEW GROUP h:%p; g:%p;",heracles, group);
 	rb_link_node(&group->node, parent, node);
 	rb_insert_color(&group->node, &group->subnet->tree);
 	return group;
 }
+
 
 //updates the old group
 //inserting the new node inside the group
@@ -185,7 +185,8 @@ struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracle
 		.cwnd_total = 0,
 		.in_ca_count = 0,
 		.rtt = heracles->rtt, 	//this could be updated
-		.heracles_list = LIST_HEAD_INIT(group->heracles_list)
+		.heracles_list = LIST_HEAD_INIT(group->heracles_list),
+		.ts = 0,
 	};
 	list_add(&heracles->node, &group->heracles_list);
 	return group;

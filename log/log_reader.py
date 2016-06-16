@@ -85,11 +85,6 @@ def log_line_cleanse(line_match):
 	return ' '.join(d.values())
 
 
-"""
-def mathis_throughput(ploss, mss, rtt):
-	c = math.sqrt(3/2)
-	return mss / rtt * c / math.sqrt(ploss)
-"""
 
 help_str = ("usage: ./log_reader.py <log file>\n"
 			"options:\n"
@@ -149,8 +144,9 @@ if __name__ == '__main__':
 	if join:
 
 		sc2 = create_script(fname + "_rtt", ["rtt","srtt","mdev"]*len(files), files*3, [RTT,SRTT,MDEV]*len(files)) 
-		sc1 = create_script(fname + "_cwnd", ["cwnd"]*len(files), files, [CWND]*len(files));
-		sc3 = create_script(fname + "_throughput", ["tp"]*len(files), files, [THROUGHPUT]*len(files))
+		sc1 = create_script(fname + "_cwnd", ["cwnd"]*len(files), files, [CWND]*len(files))
+		sc3 = create_script(fname + "_ss", ["ss"]*len(files), files, [SSTHRESH]*len(files))
+		#sc3 = create_script(fname + "_throughput", ["tp"]*len(files), files, [THROUGHPUT]*len(files))
 		scripts = [sc1, sc2, sc3]	
 
 		for script in scripts:
