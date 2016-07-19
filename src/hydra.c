@@ -35,6 +35,7 @@ void hydra_remove_subnet(struct hydra_subnet *subnet);
 struct hydra_group *hydra_add_node(struct heracles *heracles)
 {
 	spin_lock(&hydra_lock);
+	if (heracles->group) return heracles->group;
 	struct hydra_group *g = __hydra_add_node(heracles);
 	spin_unlock(&hydra_lock);
 	return g;
@@ -45,7 +46,6 @@ struct hydra_group *__hydra_add_node(struct heracles *heracles)
 {
 	struct hydra_subnet *sub_pt;
 	BUG_ON(!heracles);
-
 	if (!heracles->id)
 		heracles->id = heracles_counter++;
 
@@ -186,7 +186,7 @@ struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracle
 		.in_ca_count = 0,
 		.rtt = heracles->rtt, 	//this could be updated
 		.heracles_list = LIST_HEAD_INIT(group->heracles_list),
-		.ts = 0,
+		.events_ts={0},
 	};
 	list_add(&heracles->node, &group->heracles_list);
 	return group;
@@ -229,12 +229,15 @@ struct hydra_group *__hydra_update(struct heracles *heracles)
 	BUG_ON(!heracles);
 	BUG_ON(!heracles->group);
 
-	if (heracles->group->size == 1) {
-		__hydra_remove_node(heracles);
+	struct hydra_group *group = heracles->group; 	
+	if (heracles->group && heracles->group->size == 1) {
+		
+		__hydra_remove_node(heracles);	//remove the node from the group before changing groups
 		//hydra_remove_group(heracles, 0); // the 0 is so that the subnet wasnt cleared, as a performance thing, but fuck it
 		return __hydra_add_node(heracles);
 	}
-	return hydra_insert_in_subnet(heracles->group->subnet, heracles);
+	__hydra_remove_node(heracles);
+	return hydra_insert_in_subnet(group->subnet, heracles);
 }
 
 

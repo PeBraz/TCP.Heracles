@@ -22,7 +22,7 @@ THROUGHPUT=11
 
 gnuplot_base_plot = "\"{}.csv\" using 1:{} with linespoints title \"{}\""
 
-gnuplot_base = ("set terminal png\n"
+gnuplot_base = ("set terminal png size 1920, 1080\n"
 	"set output \"{fname}.png\"\n"
 	"set size 1,1\n"
 	"set grid y\n"
@@ -79,6 +79,8 @@ def log_line_cleanse(line_match):
 	d["srtt"] = str(int(d["srtt"]) >> 3)
 	d["mdev"] = str(int(d["mdev"]) >> 2)
 	d["throughput"] = str((int(d["cwnd"]) * int(d["mss"]) * 8 )/ (int(d["rtt"]) / 10**6))
+	if int(d["ss"]) >=  0x7fffffff:
+		d["ss"] = "0"
 	if float(d["throughput"]) > 10000000:
 		d["throughput"] = "0"
 	##should assert order is correct

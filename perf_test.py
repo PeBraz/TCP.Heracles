@@ -8,7 +8,7 @@ import re
 import sys
 
 
-NUM_CLIENTS = 1
+NUM_CLIENTS = 2
 
 target = "11.0.0.2"
 protocol = "heracles"

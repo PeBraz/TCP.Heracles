@@ -4,6 +4,10 @@
 
 #include <linux/types.h>
 
+#define DBG() printk(KERN_INFO "[heracles]: %s\n", __FUNCTION__);
+
+#define NUMBER_HERACLES_EVENTS 3
+
 struct hydra_subnet {
 	// stores the upper 24 bits of the inet addresses of nodes in this group
 	// I need to be careful, of type __be32 when shifting because of subnets
@@ -28,8 +32,18 @@ struct hydra_group {
 	u32 cwnd_total;
 	/*number of connections in congestion avoidace */
 	size_t in_ca_count;
-	u32 ts;	//use to signal sshtresh events, when ts increments all connections must reduce cwnd to ssthresh estimate
+	int events_ts[NUMBER_HERACLES_EVENTS];	//use to signal sshtresh events
 };
+
+
+enum heracles_event {
+	HER_JOIN = 0x0,	// connection jumped up to estimated ssthresh
+	HER_LOSS = 0x1,	// connection loss 
+	HER_LEAVE = 0x2,// connection left group
+	HER_NULL,
+};
+
+
 
 struct heracles {
 	struct list_head node;
@@ -37,18 +51,16 @@ struct heracles {
 	__be32 inet_addr;
 	int id;
     u32 rtt;
-	//number of acks since init
-	size_t acks;
+    size_t acks; //number of acks since init
 	
 	int in_ca;
 	u32 old_ssthresh;
 	u32 old_cwnd;
-//for window increase after group leave
-	//indicates if window is congestion limited, so it can increase
-	int is_limited;
-	/* other connections update this field to specify the amount it should increase*/
-	u32 excess;
-	u32 ts;	// local event counter
+
+	//int is_limited;
+	//u32 excess;
+
+	int events_ts[NUMBER_HERACLES_EVENTS]; //event counter for each event
 };
 
 
