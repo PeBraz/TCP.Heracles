@@ -129,7 +129,18 @@ void heracles_add_event(struct heracles *heracles, enum heracles_event event)
 }
 
 
-void heracles_join() {}
+void heracles_join(struct heracles *heracles)
+{
+
+	hydra_add_node(heracles);
+
+	heracles->events_ts[HER_JOIN] = heracles->group->events_ts[HER_JOIN];
+	heracles->events_ts[HER_LEAVE] = heracles->group->events_ts[HER_LEAVE];
+	heracles->events_ts[HER_LOSS] = heracles->group->events_ts[HER_LOSS];
+	heracles_add_event(heracles, HER_JOIN);
+}
+
+
 
 //
 // 		This is a basic implementation when polling for events. 
@@ -235,7 +246,10 @@ void heracles_event_handling(struct sock *sk)
 		/* A connection left update ssthresh  (increase), cwnd will increase in slow start*/
 		case HER_LEAVE:
 			tp->snd_cwnd = heracles_ssthresh_estimate(heracles); // slow start instead? only up to ssthresh
+			heracles->old_cwnd = tp->snd_cwnd;	// someone has to clean this mess
+
 			tp->snd_ssthresh = heracles_cwnd_estimate(heracles); // take estimate from cwnd instead of ssthresh
+			heracles->old_ssthresh = tp->snd_ssthresh;
 			return;
 
 		default:
@@ -263,13 +277,6 @@ void heracles_group_skip(struct sock*sk) {
 	tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
 	//tp->snd_cwnd = min(tp->snd_cwnd_clamp, ssthresh);
 	// heracles_update_group_ssthresh(heracles, tp->snd_ssthresh);   <- dont do it, after a join event, other connections must drop according to the initial slow start
-
-	heracles->events_ts[HER_JOIN] = heracles->group->events_ts[HER_JOIN];
-	heracles->events_ts[HER_LEAVE] = heracles->group->events_ts[HER_LEAVE];
-	heracles->events_ts[HER_LOSS] = heracles->group->events_ts[HER_LOSS];
-
-
-	heracles_add_event(heracles, HER_JOIN);
 }
 
 // heracles_ss_skip: when cwnd < ssthresh, tries to insert connection in a group
@@ -282,7 +289,7 @@ bool heracles_ss_skip(struct sock *sk)
 
 	if (!heracles->group && heracles->acks >= MIN_ACKS) {
 	//if (heracles_ssthresh_estimate(heracles) > tp->snd_ssthresh && heracles->acks >= MIN_ACKS) {
-		hydra_add_node(heracles);
+		heracles_join(heracles);
 		// Slow Start Skip Conditions
 		//	1. connection is in a group (atleast 3 acks for RTT estimation)
 		//	2. alteast another connection is in Congestion Avoidance
@@ -310,10 +317,8 @@ void heracles_ca(struct sock *sk)
 	// Connection tries to join group during Congestion avoidance
 	if (!heracles->group && heracles->acks >= MIN_ACKS) {
 		// Check if joined a group successfully
-		if (hydra_add_node(heracles)) {
-			heracles_group_skip(sk);
-		}
-		return;
+		heracles_join(heracles);
+		heracles_group_skip(sk);
 	}
 	
 	if (!heracles->group)
@@ -378,13 +383,21 @@ void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 
 	if (!heracles->group) return;
 
-	if (!hydra_remains_in_group(heracles)) {
-		heracles->acks = acked;
-		heracles_update_group_cwnd(heracles, 0);
-		heracles_try_leave_ca(heracles);
-	}
+
+	if (hydra_remains_in_group(heracles)) return;
+
+	// Before leaving
+	heracles->acks = acked; 
+	heracles_update_group_cwnd(heracles, 0);
+	heracles_try_leave_ca(heracles);
+
 	hydra_update(heracles);
 
+	//In new group
+	heracles->events_ts[HER_JOIN] = heracles->group->events_ts[HER_JOIN];
+	heracles->events_ts[HER_LEAVE] = heracles->group->events_ts[HER_LEAVE];
+	heracles->events_ts[HER_LOSS] = heracles->group->events_ts[HER_LOSS];
+	heracles_add_event(heracles, HER_JOIN);
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_pkts_acked);
 
