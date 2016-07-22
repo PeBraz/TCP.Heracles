@@ -186,8 +186,15 @@ struct hydra_group *hydra_init_group(struct hydra_subnet *subnet, struct heracle
 		.in_ca_count = 0,
 		.rtt = heracles->rtt, 	//this could be updated
 		.heracles_list = LIST_HEAD_INIT(group->heracles_list),
-		.events_ts={0},
 	};
+
+	int i;
+	for (i=0; i < NUMBER_HERACLES_EVENTS; i++) {
+		group->events[i].ts = 0;
+		group->events[i].cwnd = 0;
+		group->events[i].ssthresh = 0;
+	}
+
 	list_add(&heracles->node, &group->heracles_list);
 	return group;
 }

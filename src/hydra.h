@@ -4,7 +4,7 @@
 
 #include <linux/types.h>
 
-#define DBG() printk(KERN_INFO "[heracles]: %s\n", __FUNCTION__);
+#define DBG() printk(KERN_INFO "[heracles: %s]\n", __FUNCTION__);
 
 #define NUMBER_HERACLES_EVENTS 3
 
@@ -32,7 +32,12 @@ struct hydra_group {
 	u32 cwnd_total;
 	/*number of connections in congestion avoidace */
 	size_t in_ca_count;
-	int events_ts[NUMBER_HERACLES_EVENTS];	//use to signal sshtresh events
+	
+	struct {
+		int ts; // event counter
+		u32 cwnd; // event cwnd
+		u32 ssthresh; // event ssthresh
+	} events[NUMBER_HERACLES_EVENTS]; // values for event signaling
 };
 
 
@@ -57,10 +62,8 @@ struct heracles {
 	u32 old_ssthresh;
 	u32 old_cwnd;
 
-	//int is_limited;
-	//u32 excess;
+	int events_ts[NUMBER_HERACLES_EVENTS];
 
-	int events_ts[NUMBER_HERACLES_EVENTS]; //event counter for each event
 };
 
 

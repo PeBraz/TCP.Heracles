@@ -25,6 +25,7 @@ void heracles_add_event(struct heracles*, enum heracles_event);
 bool heracles_is_event(struct heracles*);
 void heracles_in_group_release(struct heracles*);
 
+
 void tcp_heracles_init(struct sock *sk)
 {
 	struct heracles *heracles = inet_csk_ca(sk);
@@ -43,9 +44,23 @@ void tcp_heracles_init(struct sock *sk)
 EXPORT_SYMBOL_GPL(tcp_heracles_init);
 
 
-//static enum heracles_event[]  ;//????
+//
+//	Estimates the ssthresh from all the connections in the group that are in congestion avoidance.
+//
+static inline u32 heracles_ssthresh_estimate(struct heracles *heracles)
+{
+	printk(KERN_INFO "SS_ESTIMATE: %d %d\n", heracles->group->ssthresh_total, heracles->group->size);
+	return heracles->group->ssthresh_total / heracles->group->size;
+}
 
-
+//
+// Estimates the cwnd from all the connections in the group
+//
+static inline u32 heracles_cwnd_estimate(struct heracles *heracles)
+{
+	printk(KERN_INFO "CWND_ESTIMATE: %d %d\n", heracles->group->cwnd_total, heracles->group->size);
+	return heracles->group->cwnd_total / heracles->group->size;
+}
 
 void tcp_heracles_release(struct sock *sk) 
 {
@@ -56,7 +71,6 @@ void tcp_heracles_release(struct sock *sk)
 		// 	signals event, so other connections can get the ssthresh that was released
 		//printk(KERN_INFO "Node goes bye-bye %d\n", heracles->group->ssthresh_total);
 	    heracles_in_group_release(heracles);
-	    heracles_add_event(heracles, HER_LEAVE);
 		hydra_remove_node(heracles);
 	}
 	tcp_heracles_init(sk);
@@ -110,34 +124,60 @@ EXPORT_SYMBOL_GPL(tcp_reno2_cong_avoid_ai);
 
 void heracles_update_group_ssthresh(struct heracles *heracles, u32 ssthresh) 
 {
+	printk(KERN_INFO "SS UPDATE: %d > %d = %d\n", heracles->old_ssthresh, ssthresh, heracles->group->ssthresh_total - heracles->old_ssthresh + ssthresh);
 	heracles->group->ssthresh_total -= heracles->old_ssthresh;
 	heracles->group->ssthresh_total += ssthresh;
 	heracles->old_ssthresh = ssthresh;
 }
 void heracles_update_group_cwnd(struct heracles *heracles, u32 cwnd) 
 {
+	printk(KERN_INFO "CWND UPDATE: %d > %d = %d\n", heracles->old_cwnd, cwnd, heracles->group->cwnd_total -heracles->old_cwnd+ cwnd);
 	heracles->group->cwnd_total -= heracles->old_cwnd;
 	heracles->group->cwnd_total += cwnd;
 	heracles->old_cwnd = cwnd;
 }
 
+//
+// heracles_add_event - notifies the group of an event (JOIN, LEAVE, LOSS) 
+// 		and the cwnd/ssthresh state at the start of the event. 
+//			Replaces previous events of the same type.
+//
 void heracles_add_event(struct heracles *heracles, enum heracles_event event) 
 {
-	heracles->group->events_ts[event]++;
-	heracles->events_ts[event] = heracles->group->events_ts[event];
-	printk(KERN_INFO "NEW event: %s -> %d\n", (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events_ts[event]);
+	heracles->group->events[event].ts++;
+	heracles->group->events[event].cwnd = heracles_cwnd_estimate(heracles);
+	heracles->group->events[event].ssthresh = heracles_ssthresh_estimate(heracles);
+
+	heracles->events_ts[event] = heracles->group->events[event].ts;
+	printk(KERN_INFO "NEW event %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
 }
 
 
-void heracles_join(struct heracles *heracles)
+//
+// A new connection joins a group:
+//	1) it updates its events to equal the group's events
+//  2) update group ssthresh/cwnd
+//  3) signal JOIN event
+//
+void heracles_join(struct sock *sk)
 {
+		DBG();
+	struct heracles *heracles = inet_csk_ca(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	hydra_add_node(heracles);
 
-	heracles->events_ts[HER_JOIN] = heracles->group->events_ts[HER_JOIN];
-	heracles->events_ts[HER_LEAVE] = heracles->group->events_ts[HER_LEAVE];
-	heracles->events_ts[HER_LOSS] = heracles->group->events_ts[HER_LOSS];
+	heracles->events_ts[HER_JOIN] = heracles->group->events[HER_JOIN].ts;
+	heracles->events_ts[HER_LEAVE] = heracles->group->events[HER_LEAVE].ts;
+	heracles->events_ts[HER_LOSS] = heracles->group->events[HER_LOSS].ts;
+
+	if (!tcp_in_initial_slowstart(tp)) 
+		heracles_update_group_ssthresh(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
+
+	heracles_update_group_cwnd(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
+
 	heracles_add_event(heracles, HER_JOIN);
+	//should update group cwnd and ssthresh ?? 
 }
 
 
@@ -155,14 +195,14 @@ void heracles_join(struct heracles *heracles)
 //
 enum heracles_event heracles_poll_event(struct heracles *heracles) 
 {
-	int event;
 
+	int event;
 	for (event=0; event < NUMBER_HERACLES_EVENTS; event++) {
-		if (heracles->group->events_ts[event] > heracles->events_ts[event]) {
-			heracles->events_ts[HER_JOIN] = heracles->group->events_ts[HER_JOIN];
-			heracles->events_ts[HER_LEAVE] = heracles->group->events_ts[HER_LEAVE];
-			heracles->events_ts[HER_LOSS] = heracles->group->events_ts[HER_LOSS];
-			printk(KERN_INFO "POLL: %s -> %d\n", (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events_ts[event]);
+		if (heracles->group->events[event].ts > heracles->events_ts[event]) {
+			heracles->events_ts[HER_JOIN] = heracles->group->events[HER_JOIN].ts;
+			heracles->events_ts[HER_LEAVE] = heracles->group->events[HER_LEAVE].ts;
+			heracles->events_ts[HER_LOSS] = heracles->group->events[HER_LOSS].ts;
+			printk(KERN_INFO "POLL %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
 			return (enum heracles_event)event;
 		}
 	}
@@ -170,65 +210,27 @@ enum heracles_event heracles_poll_event(struct heracles *heracles)
 }
 
 
-/*
- * whenever a connection is updating congestion window, it checks if it was previously in CA
- * If it was, then it updates the ssthresh for the group
- * If not it will enter CA and update the group
- *
- */
-void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh)
-{
-	if (heracles->in_ca) {
-		//printk(KERN_INFO "(IN CA) Updading ssthresh: %p - %u\n", heracles, heracles->group->ssthresh_total);
-		heracles->group->ssthresh_total -= heracles->old_ssthresh;
-		heracles->group->ssthresh_total += ssthresh;
-		heracles->old_ssthresh = ssthresh;
-		return;
-	}
 
-	heracles->in_ca = 1;
-	heracles->group->in_ca_count++;
-	heracles->group->ssthresh_total += ssthresh;
-	heracles->old_ssthresh = ssthresh;
-}
-
-void heracles_try_leave_ca(struct heracles *heracles) 
-{
-	if (!heracles->in_ca) return;
-
-	heracles->in_ca = 0;
-	heracles->group->in_ca_count--; 
-	heracles->group->ssthresh_total -= heracles->old_ssthresh;
-	heracles->old_ssthresh = 0;
-}
-
-
+// Before a node is released from a group, it must first share cwnd/ssthersh information
+// with the rest of the group
+// If the node is alone in the group do nothing 
 void heracles_in_group_release(struct heracles *heracles) 
 {
-	if (heracles->in_ca) 
-		heracles->group->in_ca_count--;
-}
+		//DBG();
+	if (heracles->group->size > 1) {
+		heracles->group->size--; // size is used to calculate cwnd/ssthresh for event
+    	heracles_add_event(heracles, HER_LEAVE);
+    	heracles->group->size++;
+	}
+	
+	heracles->group->ssthresh_total -= heracles->old_ssthresh;
+	heracles->group->cwnd_total -= heracles->old_cwnd;
 
-//
-//	Estimates the ssthresh from all the connections in the group that are in congestion avoidance.
-//
-static inline u32 heracles_ssthresh_estimate(struct heracles *heracles)
-{
-	printk(KERN_INFO "SS_ESTIMATE: %d %d\n", heracles->group->ssthresh_total, heracles->group->size);
-	return heracles->group->ssthresh_total / heracles->group->size;
-}
-
-//
-// Estimates the cwnd from all the connections in the group
-//
-static inline u32 heracles_cwnd_estimate(struct heracles *heracles)
-{
-	printk(KERN_INFO "CWND_ESTIMATE: %d %d\n", heracles->group->cwnd_total, heracles->group->size);
-	return heracles->group->cwnd_total / heracles->group->size;
 }
 
 void heracles_event_handling(struct sock *sk)
 {
+		DBG();
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
 
@@ -237,25 +239,28 @@ void heracles_event_handling(struct sock *sk)
 
 		/* Loss estimate new ssthresh and decrease*/
 		case HER_LOSS:
+			tp->snd_ssthresh = heracles->group->events[HER_LOSS].ssthresh;
+			tp->snd_cwnd = heracles->group->events[HER_LOSS].ssthresh;
+			return;
 		/* Another connection joined group, update ssthresh and start from it (drop down)*/
 		case HER_JOIN:
-			tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
-			tp->snd_cwnd = tp->snd_ssthresh;
+			tp->snd_ssthresh = heracles->group->events[HER_JOIN].ssthresh;
+			tp->snd_cwnd = heracles->group->events[HER_JOIN].ssthresh;
 			return;
 
 		/* A connection left update ssthresh  (increase), cwnd will increase in slow start*/
 		case HER_LEAVE:
+			/* why do i want a different cwnd on leave??
 			tp->snd_cwnd = heracles_ssthresh_estimate(heracles); // slow start instead? only up to ssthresh
 			heracles->old_cwnd = tp->snd_cwnd;	// someone has to clean this mess
-
-			tp->snd_ssthresh = heracles_cwnd_estimate(heracles); // take estimate from cwnd instead of ssthresh
-			heracles->old_ssthresh = tp->snd_ssthresh;
+			*/
+			tp->snd_ssthresh = heracles->group->events[HER_LEAVE].cwnd; // take estimate from cwnd instead of ssthresh
+			//heracles->old_ssthresh = heracles->group->events[HER_LEAVE].cwnd;
 			return;
 
 		default:
 			BUG();
 			return;
-
 	}
 }
 
@@ -266,17 +271,17 @@ void heracles_event_handling(struct sock *sk)
 //	4. Updates group ssthresh
 //	5. Signals event to group
 void heracles_group_skip(struct sock*sk) {
+		DBG();
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
-
 	// important because of initial slow start
-	u32 window_jump = min(tp->snd_ssthresh, tp->snd_cwnd);	
-
-	heracles_try_enter_ca(heracles, window_jump);
+	/*u32 window_jump = min(tp->snd_ssthresh, tp->snd_cwnd);	
+	heracles_try_enter_ca(heracles, window_jump);*/
 
 	tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
+	//heracles_try_enter_ca(heracles, tp->snd_ssthresh);
 	//tp->snd_cwnd = min(tp->snd_cwnd_clamp, ssthresh);
-	// heracles_update_group_ssthresh(heracles, tp->snd_ssthresh);   <- dont do it, after a join event, other connections must drop according to the initial slow start
+	// heracles_update_group_ssthresh(heracles, tp->snd_ssthresh);
 }
 
 // heracles_ss_skip: when cwnd < ssthresh, tries to insert connection in a group
@@ -284,12 +289,13 @@ void heracles_group_skip(struct sock*sk) {
 //
 bool heracles_ss_skip(struct sock *sk)
 {
+		DBG();
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
 
 	if (!heracles->group && heracles->acks >= MIN_ACKS) {
 	//if (heracles_ssthresh_estimate(heracles) > tp->snd_ssthresh && heracles->acks >= MIN_ACKS) {
-		heracles_join(heracles);
+		heracles_join(sk);
 		// Slow Start Skip Conditions
 		//	1. connection is in a group (atleast 3 acks for RTT estimation)
 		//	2. alteast another connection is in Congestion Avoidance
@@ -297,10 +303,13 @@ bool heracles_ss_skip(struct sock *sk)
 
 
 		//experiment instead of the following:
-		if (heracles->group->in_ca_count > 0 && heracles_ssthresh_estimate(heracles) > tp->snd_cwnd) {
-		//if (heracles->group->in_ca_count > 0 && heracles_ssthresh_estimate(heracles) > tp->snd_ssthresh) {
+		//if (heracles->group->in_ca_count > 0 && heracles_ssthresh_estimate(heracles) > tp->snd_cwnd) {
+		if (heracles_ssthresh_estimate(heracles) > tp->snd_cwnd) {
 			printk(KERN_INFO "SKIPPING SS - totalss:%d ss:%d cwnd:%d group_size:%d in_ca_count:%d \n", heracles->group->ssthresh_total, tp->snd_ssthresh, tp->snd_cwnd, heracles->group->size, heracles->group->in_ca_count);
-			heracles_group_skip(sk);
+			
+			tp->snd_ssthresh = max(heracles_ssthresh_estimate(heracles), 2U);
+			
+			//heracles_group_skip(sk);
 			return true;
 		}
 	}
@@ -310,23 +319,27 @@ bool heracles_ss_skip(struct sock *sk)
 
 void heracles_ca(struct sock *sk) 
 {
-	struct tcp_sock *tp = tcp_sk(sk);
+		//DBG();
 	struct heracles *heracles = inet_csk_ca(sk);
-
+	struct tcp_sock *tp = tcp_sk(sk);
 
 	// Connection tries to join group during Congestion avoidance
 	if (!heracles->group && heracles->acks >= MIN_ACKS) {
 		// Check if joined a group successfully
-		heracles_join(heracles);
-		heracles_group_skip(sk);
+		heracles_join(sk);
+		tp->snd_ssthresh = max(heracles_ssthresh_estimate(heracles), 2U);
+		//heracles_group_skip(sk);
 	}
 	
 	if (!heracles->group)
 		return;
 
-	heracles_try_enter_ca(heracles, tp->snd_ssthresh);
+	//heracles_try_enter_ca(heracles, tp->snd_ssthresh);
 
 	heracles_event_handling(sk);
+
+	heracles_update_group_cwnd(heracles, tp->snd_cwnd);
+	heracles_update_group_ssthresh(heracles, tp->snd_ssthresh);
 }
 
 
@@ -336,10 +349,12 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
 
-	HERACLES_SOCK_DEBUG(tp, heracles);
+	//HERACLES_SOCK_DEBUG(tp, heracles);
+
 
 	if (!tcp_is_cwnd_limited(sk))
 		return;
+
 
 	/* In "safe" area, increase. */
 	if (tp->snd_cwnd < tp->snd_ssthresh) {
@@ -360,8 +375,8 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	tcp_reno2_cong_avoid_ai(tp, tp->snd_cwnd, acked);
 
 	// Increase the congestion window
-	if (heracles->group)
-		heracles_update_group_cwnd(heracles, tp->snd_cwnd);
+	/*if (heracles->group) --> only update after polling for events
+		heracles_update_group_cwnd(heracles, tp->snd_cwnd);*/
 
 	/* This should be the last instruction:
 	 *  - Connection may have no group and join, having a higher sthresh, and will increase cwnd exponentially
@@ -377,7 +392,9 @@ EXPORT_SYMBOL_GPL(tcp_heracles_cong_avoid);
 
 void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 {
+		DBG();
 	struct heracles *heracles = inet_csk_ca(sk);
+	struct tcp_sock *tp = tcp_sk(sk);
 	heracles->acks += acked;
 	heracles->rtt = rtt;
 
@@ -387,29 +404,51 @@ void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 	if (hydra_remains_in_group(heracles)) return;
 
 	// Before leaving
+	// leave event, send LEAVE event, decrement total_cwnd/total_ssthresh 
+	heracles_in_group_release(heracles);
+	// restart heracles information
+	heracles->old_ssthresh = 0;
+	heracles->old_cwnd = 0;
 	heracles->acks = acked; 
-	heracles_update_group_cwnd(heracles, 0);
-	heracles_try_leave_ca(heracles);
+	heracles->rtt = rtt;
 
+	//update, changing group
 	hydra_update(heracles);
 
 	//In new group
-	heracles->events_ts[HER_JOIN] = heracles->group->events_ts[HER_JOIN];
-	heracles->events_ts[HER_LEAVE] = heracles->group->events_ts[HER_LEAVE];
-	heracles->events_ts[HER_LOSS] = heracles->group->events_ts[HER_LOSS];
+	heracles->events_ts[HER_JOIN] = heracles->group->events[HER_JOIN].ts;
+	heracles->events_ts[HER_LEAVE] = heracles->group->events[HER_LEAVE].ts;
+	heracles->events_ts[HER_LOSS] = heracles->group->events[HER_LOSS].ts;
+
+
+	if (!tcp_in_initial_slowstart(tp)) 
+		heracles_update_group_ssthresh(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
+
+
+	heracles_update_group_cwnd(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
+
 	heracles_add_event(heracles, HER_JOIN);
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_pkts_acked);
 
 u32 tcp_reno2_ssthresh(struct sock *sk)
 {
+		//DBG();
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *h = inet_csk_ca(sk);
 
-	if (!tcp_in_initial_slowstart(tp) && h->group) {
+	// do i need to check: "(!tcp_in_initial_slowstart(tp)"" ???
+	if (h->group) {
 
+		/* old way, if all connections are in slow start, ssthresh is empty, instead take value from cwnd which is updated
 		u32 new_ssthresh = max(tp->snd_cwnd >> 1U, 2U);
 		heracles_update_group_ssthresh(h, new_ssthresh);
+		heracles_add_event(h, HER_LOSS);
+		return max(heracles_ssthresh_estimate(h), 2U);
+		*/
+		u32 new_ssthresh = max(tp->snd_cwnd >> 1U, 2U);
+		heracles_update_group_cwnd(h, new_ssthresh); // this will become sstresh
+		heracles_update_group_ssthresh(h, heracles_cwnd_estimate(h));
 		heracles_add_event(h, HER_LOSS);
 		return max(heracles_ssthresh_estimate(h), 2U);
 	}
