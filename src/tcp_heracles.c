@@ -124,14 +124,14 @@ EXPORT_SYMBOL_GPL(tcp_reno2_cong_avoid_ai);
 
 void heracles_update_group_ssthresh(struct heracles *heracles, u32 ssthresh) 
 {
-	printk(KERN_INFO "SS UPDATE: %d > %d = %d\n", heracles->old_ssthresh, ssthresh, heracles->group->ssthresh_total - heracles->old_ssthresh + ssthresh);
+	// printk(KERN_INFO "SS UPDATE: %d > %d = %d\n", heracles->old_ssthresh, ssthresh, heracles->group->ssthresh_total - heracles->old_ssthresh + ssthresh);
 	heracles->group->ssthresh_total -= heracles->old_ssthresh;
 	heracles->group->ssthresh_total += ssthresh;
 	heracles->old_ssthresh = ssthresh;
 }
 void heracles_update_group_cwnd(struct heracles *heracles, u32 cwnd) 
 {
-	printk(KERN_INFO "CWND UPDATE: %d > %d = %d\n", heracles->old_cwnd, cwnd, heracles->group->cwnd_total -heracles->old_cwnd+ cwnd);
+	//printk(KERN_INFO "CWND UPDATE: %d > %d = %d\n", heracles->old_cwnd, cwnd, heracles->group->cwnd_total -heracles->old_cwnd+ cwnd);
 	heracles->group->cwnd_total -= heracles->old_cwnd;
 	heracles->group->cwnd_total += cwnd;
 	heracles->old_cwnd = cwnd;
@@ -305,7 +305,7 @@ bool heracles_ss_skip(struct sock *sk)
 		//experiment instead of the following:
 		//if (heracles->group->in_ca_count > 0 && heracles_ssthresh_estimate(heracles) > tp->snd_cwnd) {
 		if (heracles_ssthresh_estimate(heracles) > tp->snd_cwnd) {
-			printk(KERN_INFO "SKIPPING SS - totalss:%d ss:%d cwnd:%d group_size:%d in_ca_count:%d \n", heracles->group->ssthresh_total, tp->snd_ssthresh, tp->snd_cwnd, heracles->group->size, heracles->group->in_ca_count);
+			//printk(KERN_INFO "SKIPPING SS - totalss:%d ss:%d cwnd:%d group_size:%d in_ca_count:%d \n", heracles->group->ssthresh_total, tp->snd_ssthresh, tp->snd_cwnd, heracles->group->size, heracles->group->in_ca_count);
 			
 			tp->snd_ssthresh = max(heracles_ssthresh_estimate(heracles), 2U);
 			
@@ -349,19 +349,27 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
 
-	//HERACLES_SOCK_DEBUG(tp, heracles);
+	HERACLES_SOCK_DEBUG(tp, heracles);
 
 
 	if (!tcp_is_cwnd_limited(sk))
 		return;
 
+	/*
+	if (heracles->group && tp->snd_cwnd < tp->snd_ssthresh) {
+		heracles_event_handling(sk);
+		tcp_reno2_cong_avoid_ai(tp, tp->snd_cwnd, acked);
+		heracles_update_group_cwnd(heracles, tp->snd_cwnd);
+		heracles_update_group_ssthresh(heracles, tp->snd_ssthresh);
+		return;
+	}*/
+			
 
 	/* In "safe" area, increase. */
 	if (tp->snd_cwnd < tp->snd_ssthresh) {
 		/* There are a few cases where a connection in slow start is in a group, but doesn't skip*/
 		if (heracles->group) 
 			heracles_event_handling(sk);
-		
 		/* tries to skip slow start */
 		if (!heracles_ss_skip(sk)) {
 			acked = tcp_reno2_slow_start(tp, acked);

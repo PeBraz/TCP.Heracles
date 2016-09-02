@@ -4,7 +4,7 @@
 
 #include <linux/types.h>
 
-#define DBG() printk(KERN_INFO "[heracles: %s]\n", __FUNCTION__);
+#define DBG() //printk(KERN_INFO "[heracles: %s]\n", __FUNCTION__);
 
 #define NUMBER_HERACLES_EVENTS 3
 

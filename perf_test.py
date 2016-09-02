@@ -8,7 +8,7 @@ import re
 import sys
 
 
-NUM_CLIENTS = 2
+NUM_CLIENTS = 5
 
 target = "11.0.0.2"
 protocol = "heracles"
@@ -27,7 +27,7 @@ def init():
 def by_try_log(entry):	
 	m = re.match("try(\d+)\.log", entry)
 	if m:
-		return int(m.group(1))
+		return int(m.group(1)) + 1
 	return 0
 
 
@@ -43,10 +43,11 @@ threads = [Thread(target=client, args=(target, 1, protocol)) for i in range(NUM_
 time.sleep(0.1)
 for thr in threads:
 	thr.start()
-	time.sleep(2)
 	thr.join()
+	time.sleep(1)
 
 master.join()
+
 
 
 ## save dmesg into log
