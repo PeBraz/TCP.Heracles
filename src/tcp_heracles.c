@@ -123,15 +123,12 @@ EXPORT_SYMBOL_GPL(tcp_reno2_cong_avoid_ai);
 
 
 void heracles_update_group_ssthresh(struct heracles *heracles, u32 ssthresh) 
-{
-	// printk(KERN_INFO "SS UPDATE: %d > %d = %d\n", heracles->old_ssthresh, ssthresh, heracles->group->ssthresh_total - heracles->old_ssthresh + ssthresh);
-	heracles->group->ssthresh_total -= heracles->old_ssthresh;
+{	heracles->group->ssthresh_total -= heracles->old_ssthresh;
 	heracles->group->ssthresh_total += ssthresh;
 	heracles->old_ssthresh = ssthresh;
 }
 void heracles_update_group_cwnd(struct heracles *heracles, u32 cwnd) 
 {
-	//printk(KERN_INFO "CWND UPDATE: %d > %d = %d\n", heracles->old_cwnd, cwnd, heracles->group->cwnd_total -heracles->old_cwnd+ cwnd);
 	heracles->group->cwnd_total -= heracles->old_cwnd;
 	heracles->group->cwnd_total += cwnd;
 	heracles->old_cwnd = cwnd;
@@ -161,7 +158,6 @@ void heracles_add_event(struct heracles *heracles, enum heracles_event event)
 //
 void heracles_join(struct sock *sk)
 {
-		DBG();
 	struct heracles *heracles = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -177,7 +173,6 @@ void heracles_join(struct sock *sk)
 	heracles_update_group_cwnd(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
 
 	heracles_add_event(heracles, HER_JOIN);
-	//should update group cwnd and ssthresh ?? 
 }
 
 
@@ -264,32 +259,19 @@ void heracles_event_handling(struct sock *sk)
 	}
 }
 
-// When a connection enters CA from SSS:
-//	1. add its own ssthresh to the group (heracles_try_enter_ca)
-// 	2. gets is own estimate for ssthresh (c1 + c2 + ... + cn) / N
-//	3. Updates its CWND
-//	4. Updates group ssthresh
-//	5. Signals event to group
+
 void heracles_group_skip(struct sock*sk) {
-		DBG();
+
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
-	// important because of initial slow start
-	/*u32 window_jump = min(tp->snd_ssthresh, tp->snd_cwnd);	
-	heracles_try_enter_ca(heracles, window_jump);*/
 
 	tp->snd_ssthresh = heracles_ssthresh_estimate(heracles);
-	//heracles_try_enter_ca(heracles, tp->snd_ssthresh);
-	//tp->snd_cwnd = min(tp->snd_cwnd_clamp, ssthresh);
-	// heracles_update_group_ssthresh(heracles, tp->snd_ssthresh);
 }
 
 // heracles_ss_skip: when cwnd < ssthresh, tries to insert connection in a group
-//
-//
+
 bool heracles_ss_skip(struct sock *sk)
 {
-		DBG();
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
 
@@ -319,7 +301,6 @@ bool heracles_ss_skip(struct sock *sk)
 
 void heracles_ca(struct sock *sk) 
 {
-		//DBG();
 	struct heracles *heracles = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -334,8 +315,6 @@ void heracles_ca(struct sock *sk)
 	if (!heracles->group)
 		return;
 
-	//heracles_try_enter_ca(heracles, tp->snd_ssthresh);
-
 	heracles_event_handling(sk);
 
 	heracles_update_group_cwnd(heracles, tp->snd_cwnd);
@@ -349,7 +328,7 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
 
-	HERACLES_SOCK_DEBUG(tp, heracles);
+	//HERACLES_SOCK_DEBUG(tp, heracles);
 
 
 	if (!tcp_is_cwnd_limited(sk))
@@ -382,16 +361,6 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	/* In dangerous area, increase slowly. */
 	tcp_reno2_cong_avoid_ai(tp, tp->snd_cwnd, acked);
 
-	// Increase the congestion window
-	/*if (heracles->group) --> only update after polling for events
-		heracles_update_group_cwnd(heracles, tp->snd_cwnd);*/
-
-	/* This should be the last instruction:
-	 *  - Connection may have no group and join, having a higher sthresh, and will increase cwnd exponentially
-	 		(I know, it is strange that a connection, which is aleady in CA, will increase its ssthresh even more
-	 		after joining a group, this is because it suffers a loss soon, having a really low ssthresh,
-	 		from which it rises)
-	 */
 	heracles_ca(sk);
 
 }
@@ -400,7 +369,6 @@ EXPORT_SYMBOL_GPL(tcp_heracles_cong_avoid);
 
 void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 {
-		DBG();
 	struct heracles *heracles = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 	heracles->acks += acked;
@@ -439,21 +407,14 @@ void tcp_heracles_pkts_acked(struct sock *sk, u32 acked, s32 rtt)
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_pkts_acked);
 
-u32 tcp_reno2_ssthresh(struct sock *sk)
+u32 tcp_heracles_ssthresh(struct sock *sk)
 {
-		//DBG();
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *h = inet_csk_ca(sk);
 
 	// do i need to check: "(!tcp_in_initial_slowstart(tp)"" ???
 	if (h->group) {
 
-		/* old way, if all connections are in slow start, ssthresh is empty, instead take value from cwnd which is updated
-		u32 new_ssthresh = max(tp->snd_cwnd >> 1U, 2U);
-		heracles_update_group_ssthresh(h, new_ssthresh);
-		heracles_add_event(h, HER_LOSS);
-		return max(heracles_ssthresh_estimate(h), 2U);
-		*/
 		u32 new_ssthresh = max(tp->snd_cwnd >> 1U, 2U);
 		heracles_update_group_cwnd(h, new_ssthresh); // this will become sstresh
 		heracles_update_group_ssthresh(h, heracles_cwnd_estimate(h));
@@ -463,14 +424,14 @@ u32 tcp_reno2_ssthresh(struct sock *sk)
 	return max(tp->snd_cwnd >> 1U, 2U); 
 }
 
-EXPORT_SYMBOL(tcp_reno2_ssthresh);
+EXPORT_SYMBOL(tcp_heracles_ssthresh);
 
 struct tcp_congestion_ops tcp_heracles = {
 	.init		= tcp_heracles_init,
 	.flags		= TCP_CONG_NON_RESTRICTED,
 	.name		= "heracles",
 	.owner		= THIS_MODULE,
-	.ssthresh	= tcp_reno2_ssthresh,
+	.ssthresh	= tcp_heracles_ssthresh,
 	.cong_avoid	= tcp_heracles_cong_avoid,
 	.pkts_acked	= tcp_heracles_pkts_acked,
 	.cwnd_event	= tcp_heracles_cwnd_event,
