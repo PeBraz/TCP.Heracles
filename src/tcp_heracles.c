@@ -49,7 +49,6 @@ EXPORT_SYMBOL_GPL(tcp_heracles_init);
 //
 static inline u32 heracles_ssthresh_estimate(struct heracles *heracles)
 {
-	printk(KERN_INFO "SS_ESTIMATE: %d %d\n", heracles->group->ssthresh_total, heracles->group->size);
 	return heracles->group->ssthresh_total / heracles->group->size;
 }
 
@@ -58,7 +57,6 @@ static inline u32 heracles_ssthresh_estimate(struct heracles *heracles)
 //
 static inline u32 heracles_cwnd_estimate(struct heracles *heracles)
 {
-	printk(KERN_INFO "CWND_ESTIMATE: %d %d\n", heracles->group->cwnd_total, heracles->group->size);
 	return heracles->group->cwnd_total / heracles->group->size;
 }
 
