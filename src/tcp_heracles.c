@@ -454,7 +454,7 @@ struct tcp_congestion_ops tcp_heracles = {
 
 static int __init heracles_init(void)
 {
-	BUILD_BUG_ON(sizeof(struct heracles) > ICSK_CA_PRIV_SIZE);
+	//BUILD_BUG_ON(sizeof(struct heracles) > ICSK_CA_PRIV_SIZE);
 	printk(KERN_INFO "Initializing our hero and savior: HERACLES!!\n");
 	tcp_register_congestion_control(&tcp_heracles);
 	return 0;
