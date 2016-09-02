@@ -159,7 +159,7 @@ void heracles_add_event(struct heracles *heracles, enum heracles_event event)
 	heracles->group->events[event].ssthresh = heracles_ssthresh_estimate(heracles);
 
 	heracles->events_ts[event] = heracles->group->events[event].ts;
-	printk(KERN_INFO "NEW event %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
+	printk(KERN_INFO "NEW event (her.id:%d): %s -> %d\n", heracles->id, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
 }
 
 
@@ -341,7 +341,7 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
 
-	//HERACLES_SOCK_DEBUG(tp, heracles);
+	HERACLES_SOCK_DEBUG(tp, heracles);
 
 
 	if (!tcp_is_cwnd_limited(sk))
