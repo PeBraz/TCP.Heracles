@@ -17,7 +17,12 @@ MODULE_DESCRIPTION("TCP Heracles");
 // error while deciding on stalling an upper connection (cwnd stalls if CWND_ERROR + cwnd average > cwnd )
 #define CWND_ERROR 10
 #define HERACLES_SOCK_DEBUG(tp, her)\
-	printk(KERN_INFO "%p %u %d %d %d %d %d %d %d\n", her, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh, tp->mss_cache, her->rtt, tp->srtt_us, tp->mdev_us);
+	do {\
+		printk(KERN_INFO "T: %d %u %d %d %d %d %d %d\n", her->id, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh,  her->rtt, tp->srtt_us, tp->mdev_us);\
+		printk(KERN_INFO "H(group:%d,ak:%d,ca:%d,oss:%d,ocw:%d,e:%d), ", her->group?her->group->id:0, her->acks, her->in_ca, her->old_ssthresh, her->old_cwnd, her->events_ts);\
+		if (her->group)\
+			printk(KERN_INFO "G(size:%d,sst:%d,cwt:%d,acc:%d)", (int)her->group->size, her->group->ssthresh_total, her->group->cwnd_total, her->group->in_ca_count);\
+	} while (0);\
 
 void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh);
 void heracles_try_leave_ca(struct heracles *heracles);
@@ -26,11 +31,13 @@ bool heracles_is_event(struct heracles*);
 void heracles_in_group_release(struct heracles*);
 
 
+static int global_heracles_id = 1;
+
 void tcp_heracles_init(struct sock *sk)
 {
 	struct heracles *heracles = inet_csk_ca(sk);
 	*heracles = (struct heracles){
-		.id=0,
+		.id=global_heracles_id++,
 		.group=0,
 		.inet_addr=sk->sk_daddr,
 		.rtt=0,
@@ -63,6 +70,10 @@ static inline u32 heracles_cwnd_estimate(struct heracles *heracles)
 void tcp_heracles_release(struct sock *sk) 
 {
 	struct heracles *heracles = inet_csk_ca(sk);
+
+	int id = heracles->id;
+
+
 	if (heracles->group) {
 
 		//	node leaves group without removing ssthresh information
@@ -72,6 +83,10 @@ void tcp_heracles_release(struct sock *sk)
 		hydra_remove_node(heracles);
 	}
 	tcp_heracles_init(sk);
+
+	// ehhh awful way to do this
+	global_heracles_id--;
+	heracles->id = id;
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_release);
 

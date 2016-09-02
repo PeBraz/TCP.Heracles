@@ -18,6 +18,8 @@ struct hydra_subnet {
 
 
 struct hydra_group {
+	int id;
+
 	struct rb_node node;
 	struct list_head heracles_list;
 

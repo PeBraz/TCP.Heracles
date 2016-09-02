@@ -4,7 +4,7 @@
 #include <linux/kernel.h>
 #include <linux/rbtree.h>
 #include <linux/spinlock.h>
-//#include <linux/spinlock_types.h>
+
 #include "hydra.h"
 
 
@@ -30,6 +30,9 @@ struct hydra_group *hydra_search(struct hydra_subnet *sub, struct heracles *hera
 void hydra_remove_subnet(struct hydra_subnet *subnet);
 
 
+
+//whenever a new group is created, give it a identifier
+int global_group_id = 1;
 
 
 struct hydra_group *hydra_add_node(struct heracles *heracles)
@@ -118,10 +121,10 @@ void __hydra_remove_node(struct heracles* heracles)
 {
 	list_del(&heracles->node);
 	if (heracles->group->size == 1){
-		printk(KERN_INFO "REMOVED GROUP h:%p; g:%p;\n", heracles, heracles->group);
+		printk(KERN_INFO "REMOVED GROUP h:%p; g:%d;\n", heracles, heracles->group->id);
 		hydra_remove_group(heracles, 1);
 	} else {
-		printk(KERN_INFO "LEFT GROUP h:%p; g:%p size:%d;\n", heracles, heracles->group, heracles->group->size-1);
+		printk(KERN_INFO "LEFT GROUP h:%p; g:%d size:%d;\n", heracles, heracles->group->id, heracles->group->size-1);
 		--heracles->group->size;
 		heracles->group = NULL;
 		//should i do more stuff here???
@@ -146,7 +149,7 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 		} else if (res > 0) {
 			node = &((*node)->rb_right);
 		} else {
-			printk(KERN_INFO "FOUND PREEXISTING GROUP h:%p; g:%p;\n",heracles, group);
+			printk(KERN_INFO "FOUND PREEXISTING GROUP h:%p; g:%d;\n",heracles, group->id);
 			hydra_insert_in_group(group, heracles);
 			return group;
 		}
@@ -155,7 +158,16 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 
 	struct hydra_group *group = hydra_init_group(sub, heracles);
 	heracles->group = group;
-	printk(KERN_INFO "CREATED GROUP h:%p; g:%p;\n", heracles, group);
+
+
+	//using group->id and global group_id for facilitating dbugging
+	heracles->group->id = global_group_id;
+	global_group_id += 1;
+	///////////////////////////////////////////////////////////////
+
+
+	printk(KERN_INFO "CREATED GROUP h:%p; g:%d;\n", heracles, group->id);
+
 	rb_link_node(&group->node, parent, node);
 	rb_insert_color(&group->node, &group->subnet->tree);
 	return group;
