@@ -19,7 +19,7 @@ MODULE_DESCRIPTION("TCP Heracles");
 #define HERACLES_SOCK_DEBUG(tp, her)\
 	do {\
 		printk(KERN_INFO "T: %d %u %d %d %d %d %d %d\n", her->id, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh,  her->rtt, tp->srtt_us, tp->mdev_us);\
-		printk(KERN_INFO "H(group:%d,ak:%d,ca:%d,oss:%d,ocw:%d,e:%d), ", her->group?her->group->id:0, her->acks, her->in_ca, her->old_ssthresh, her->old_cwnd, her->events_ts);\
+		printk(KERN_INFO "H(group:%d,ak:%d,ca:%d,oss:%d,ocw:%d), ", her->group?her->group->id:0, her->acks, her->in_ca, her->old_ssthresh, her->old_cwnd);\
 		if (her->group)\
 			printk(KERN_INFO "G(size:%d,sst:%d,cwt:%d,acc:%d)", (int)her->group->size, her->group->ssthresh_total, her->group->cwnd_total, her->group->in_ca_count);\
 	} while (0);\
