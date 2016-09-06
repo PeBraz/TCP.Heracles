@@ -290,7 +290,7 @@ bool heracles_ss_skip(struct sock *sk)
 
 	if (!heracles->group && heracles->acks >= MIN_ACKS) {
 	//if (heracles_ssthresh_estimate(heracles) > tp->snd_ssthresh && heracles->acks >= MIN_ACKS) {
-		heracles_join(sk);
+		heracles_join(sk);         /// ??? what if he doesnt update ssthresh and return false in function, leave group? where?
 		// Slow Start Skip Conditions
 		//	1. connection is in a group (atleast 3 acks for RTT estimation)
 		//	2. alteast another connection is in Congestion Avoidance
@@ -372,7 +372,8 @@ void tcp_heracles_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 	}
 
 	/* In dangerous area, increase slowly. */
-	tcp_reno2_cong_avoid_ai(tp, tp->snd_cwnd, acked);
+	// This should be a temporary solution, something causes the tp->snd_cwnd to have value 0
+	tcp_reno2_cong_avoid_ai(tp, tp->snd_cwnd?tp->snd_cwnd : 1, acked);
 
 	heracles_ca(sk);
 
