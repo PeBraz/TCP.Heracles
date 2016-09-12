@@ -16,20 +16,19 @@ MODULE_DESCRIPTION("TCP Heracles");
 #define MIN_ACKS 3 
 // error while deciding on stalling an upper connection (cwnd stalls if CWND_ERROR + cwnd average > cwnd )
 #define CWND_ERROR 10
-#define HERACLES_SOCK_DEBUG(tp, her)\
-	do {\
+#define HERACLES_SOCK_DEBUG(tp, her)
+	/*do {\
 		printk(KERN_INFO "T: %d %u %d %d %d %d %d %d\n", her->id, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh,  her->rtt, tp->srtt_us, tp->mdev_us);\
 		printk(KERN_INFO "H(group:%d,ak:%d,ca:%d,oss:%d,ocw:%d), ", her->group?her->group->id:0, her->acks, her->in_ca, her->old_ssthresh, her->old_cwnd);\
 		if (her->group)\
 			printk(KERN_INFO "G(size:%d,sst:%d,cwt:%d,acc:%d)", (int)her->group->size, her->group->ssthresh_total, her->group->cwnd_total, her->group->in_ca_count);\
 	} while (0);\
-
+*/
 void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh);
 void heracles_try_leave_ca(struct heracles *heracles);
 void heracles_add_event(struct heracles*, enum heracles_event);
 bool heracles_is_event(struct heracles*);
 void heracles_in_group_release(struct heracles*);
-
 
 static int global_heracles_id = 1;
 
@@ -159,7 +158,7 @@ void heracles_add_event(struct heracles *heracles, enum heracles_event event)
 	heracles->group->events[event].ssthresh = heracles_ssthresh_estimate(heracles);
 
 	heracles->events_ts[event] = heracles->group->events[event].ts;
-	printk(KERN_INFO "NEW event (her.id:%d): %s -> %d\n", heracles->id, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
+	//printk(KERN_INFO "NEW event (her.id:%d): %s -> %d\n", heracles->id, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
 }
 
 
@@ -210,7 +209,7 @@ enum heracles_event heracles_poll_event(struct heracles *heracles)
 			heracles->events_ts[HER_JOIN] = heracles->group->events[HER_JOIN].ts;
 			heracles->events_ts[HER_LEAVE] = heracles->group->events[HER_LEAVE].ts;
 			heracles->events_ts[HER_LOSS] = heracles->group->events[HER_LOSS].ts;
-			printk(KERN_INFO "POLL %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
+			//printk(KERN_INFO "POLL %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
 			return (enum heracles_event)event;
 		}
 	}
