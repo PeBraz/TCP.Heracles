@@ -89,7 +89,7 @@ void tcp_heracles_release(struct sock *sk)
 }
 EXPORT_SYMBOL_GPL(tcp_heracles_release);
 
-
+// removed this from api
 void tcp_heracles_cwnd_event(struct sock *sk, enum tcp_ca_event event)
 {
 	if (event == CA_EVENT_CWND_RESTART ||
@@ -447,7 +447,7 @@ struct tcp_congestion_ops tcp_heracles = {
 	.ssthresh	= tcp_heracles_ssthresh,
 	.cong_avoid	= tcp_heracles_cong_avoid,
 	.pkts_acked	= tcp_heracles_pkts_acked,
-	.cwnd_event	= tcp_heracles_cwnd_event,
+	//.cwnd_event	= tcp_heracles_cwnd_event,
 	.release	= tcp_heracles_release,
 };
 
