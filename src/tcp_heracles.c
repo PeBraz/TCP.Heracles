@@ -16,14 +16,11 @@ MODULE_DESCRIPTION("TCP Heracles");
 #define MIN_ACKS 3 
 // error while deciding on stalling an upper connection (cwnd stalls if CWND_ERROR + cwnd average > cwnd )
 #define CWND_ERROR 10
-#define HERACLES_SOCK_DEBUG(tp, her)
-	/*do {\
-		printk(KERN_INFO "T: %d %u %d %d %d %d %d %d\n", her->id, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh,  her->rtt, tp->srtt_us, tp->mdev_us);\
-		printk(KERN_INFO "H(group:%d,ak:%d,ca:%d,oss:%d,ocw:%d), ", her->group?her->group->id:0, her->acks, her->in_ca, her->old_ssthresh, her->old_cwnd);\
-		if (her->group)\
-			printk(KERN_INFO "G(size:%d,sst:%d,cwt:%d,acc:%d)", (int)her->group->size, her->group->ssthresh_total, her->group->cwnd_total, her->group->in_ca_count);\
+#define HERACLES_SOCK_DEBUG(tp, her)\
+	do {\
+		printk(KERN_INFO "%p %u %d %d %d %d %d %d %d\n", her, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh, tp->mss_cache, her->rtt, tp->srtt_us, tp->mdev_us);\
 	} while (0);\
-*/
+
 void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh);
 void heracles_try_leave_ca(struct heracles *heracles);
 void heracles_add_event(struct heracles*, enum heracles_event);
@@ -170,6 +167,7 @@ void heracles_add_event(struct heracles *heracles, enum heracles_event event)
 //
 void heracles_join(struct sock *sk)
 {
+	DBG();
 	struct heracles *heracles = inet_csk_ca(sk);
 	struct tcp_sock *tp = tcp_sk(sk);
 
@@ -424,7 +422,7 @@ u32 tcp_heracles_ssthresh(struct sock *sk)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *h = inet_csk_ca(sk);
-
+	DBG();
 	// do i need to check: "(!tcp_in_initial_slowstart(tp)"" ???
 	if (h->group) {
 
