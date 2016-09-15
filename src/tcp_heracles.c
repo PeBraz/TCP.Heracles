@@ -177,9 +177,7 @@ void heracles_join(struct sock *sk)
 	heracles->events_ts[HER_LEAVE] = heracles->group->events[HER_LEAVE].ts;
 	heracles->events_ts[HER_LOSS] = heracles->group->events[HER_LOSS].ts;
 
-	if (!tcp_in_initial_slowstart(tp)) 
-		heracles_update_group_ssthresh(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
-
+	heracles_update_group_ssthresh(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
 	heracles_update_group_cwnd(heracles, min(tp->snd_cwnd, tp->snd_ssthresh));
 
 	heracles_add_event(heracles, HER_JOIN);
