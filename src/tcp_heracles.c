@@ -247,7 +247,8 @@ void heracles_event_handling(struct sock *sk)
 			return;
 		/* Another connection joined group, update ssthresh and start from it (drop down)*/
 		case HER_JOIN:
-			tp->snd_ssthresh = heracles->group->events[HER_JOIN].ssthresh;
+			if (!tcp_in_initial_slowstart(tp))
+				tp->snd_ssthresh = heracles->group->events[HER_JOIN].ssthresh;
 			tp->snd_cwnd = heracles->group->events[HER_JOIN].ssthresh;
 			return;
 
@@ -257,7 +258,8 @@ void heracles_event_handling(struct sock *sk)
 			tp->snd_cwnd = heracles_ssthresh_estimate(heracles); // slow start instead? only up to ssthresh
 			heracles->old_cwnd = tp->snd_cwnd;	// someone has to clean this mess
 			*/
-			tp->snd_ssthresh = heracles->group->events[HER_LEAVE].cwnd; // take estimate from cwnd instead of ssthresh
+			if (!tcp_in_initial_slowstart(tp))
+				tp->snd_ssthresh = heracles->group->events[HER_LEAVE].cwnd; // take estimate from cwnd instead of ssthresh
 			//heracles->old_ssthresh = heracles->group->events[HER_LEAVE].cwnd;
 			return;
 
