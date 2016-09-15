@@ -207,7 +207,7 @@ enum heracles_event heracles_poll_event(struct heracles *heracles)
 			heracles->events_ts[HER_JOIN] = heracles->group->events[HER_JOIN].ts;
 			heracles->events_ts[HER_LEAVE] = heracles->group->events[HER_LEAVE].ts;
 			heracles->events_ts[HER_LOSS] = heracles->group->events[HER_LOSS].ts;
-			//printk(KERN_INFO "POLL %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
+			printk(KERN_INFO "POLL %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
 			return (enum heracles_event)event;
 		}
 	}
@@ -235,9 +235,9 @@ void heracles_in_group_release(struct heracles *heracles)
 
 void heracles_event_handling(struct sock *sk)
 {
-		DBG();
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct heracles *heracles = inet_csk_ca(sk);
+
 
 	switch(heracles_poll_event(heracles)) {
 		case HER_NULL: return;
