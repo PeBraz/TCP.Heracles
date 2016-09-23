@@ -42,6 +42,7 @@ Module.symvers
 #others
 *.swp
 log/*
+remote_logs
 !log/log_reader.py
 !log/Makefile
 *.img
