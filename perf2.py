@@ -9,14 +9,56 @@ import os
 import re
 import sys
 
-HOST_MACHINE_IP = "193.136.166.130" #"194.210.223.131"
+to_mega = lambda x: x / 1000000
+
+HOST_MACHINE_IP = "146.148.5.244"#"193.136.166.130" #"194.210.223.131"
+
 
 ## Global string for compiling regex strings, 
 ## used in: __split_source_from_csv(..) and __mod_csv(..)
-match_str = "(?P<time>\d+),(?P<srcipv4>\d+\.\d+\.\d+\.\d+),(?P<srcport>\d+),"
+match_str = ("(?P<time>\d+),(?P<srcipv4>\d+\.\d+\.\d+\.\d+),(?P<srcport>\d+),"
 			"(?P<dstipv4>\d+\.\d+\.\d+\.\d+),(?P<dstport>\d+),(?P<id>\d+),"
 			"(?P<interval_start>\d+\.\d+)-(?P<interval_end>\d+\.\d+),"
-			"(?P<size>\d+),(?P<speed>\d+)"
+			"(?P<size>\d+),(?P<speed>\d+)")
+
+
+
+## iperf client command:
+##  -c : ip address to connect to
+##	-t : duration in seconds of client
+##  -Z : congestion algorithm for TCP use
+##  -y C: output to stdout in csv format
+##	-i 1: interval in seconds between iperf logging (1 sec)
+default_cmd = "iperf -c {} -t {} -Z {} -y C -i 1"
+
+target = HOST_MACHINE_IP 
+time_p_client = 5
+num_clients = 500
+
+
+
+def sequence_test(filename, protocol="heracles"):
+	"""
+		Sequence test, connections appear in sequence, ending after the next one starts
+	"""
+	client = lambda time, id: call(default_cmd.format(target, time, protocol).split(), stdout=f)
+	f = open(filename, "w")
+
+	threads = [Thread(target=client, args=(time_p_client, i+1)) for i in range(num_clients)]
+
+	if time_p_client < 2: 
+		raise Exception("Time per client must be higher than 2.")
+
+	i = 0
+	thr[i].start()
+	while i + 1 < len(threads):
+		time.sleep(time_p_client - 1)
+		thr[i+1].start()
+		thr[i].join()
+	
+	thr[-1].join()
+
+	f.close()
 
 
 
@@ -29,26 +71,7 @@ def master_slave_test(filename, protocol="heracles"):
 	 	@filename - filename used to create iperf ouput csv file
 
 	"""
-	#try flag -N for no delay
-	#master = lambda time, id: Popen(default_cmd.format(target, time, protocol).split(), stdout=PIPE) 
-	to_mega = lambda x: x / 1000000
 	client = lambda time, id: call(default_cmd.format(target, time, protocol).split(), stdout=f)
-
-	## iperf client command:
-	##  -c : ip address to connect to
-	##	-t : duration in seconds of client
-	##  -Z : congestion algorithm for TCP use
-	##  -y C: output to stdout in csv format
-	##	-i 1: interval in seconds between iperf logging (1 sec)
-
-	default_cmd = "iperf -c {} -t {} -Z {} -y C -i 1"
-
-	target = HOST_MACHINE_IP 
-	parallel_streams = 5
-	time_p_client = 1
-	num_clients = 40
-
-
 	f = open(filename, "w")
 
 	master = Thread(target=client, args=(num_clients * (time_p_client + 1) + 1, 0))
@@ -56,7 +79,8 @@ def master_slave_test(filename, protocol="heracles"):
 
 	threads = [Thread(target=client, args=(time_p_client, i+1)) for i in range(num_clients)]
 	time.sleep(0.5)
-	for thr in threads:
+	for i, thr in enumerate(threads):
+		print "{}% - ({}/{})".format((i+1)*100 / num_clients,i+1,num_clients)
 		thr.start()
 		thr.join()
 		time.sleep(1)
@@ -66,7 +90,7 @@ def master_slave_test(filename, protocol="heracles"):
 
 
 
-def __mod_csv(filename, mean_points=7):
+def __mod_csv(filename, mean_points=3):
 	"""
 		Function creates a new csv file from another csv, 
 		calculating the moving average for each point
@@ -146,8 +170,8 @@ def __split_source_port_from_csv(filename):
 		if filename not in files:
 			if len(files) > 0:
 				rel_time_counters[filename] = max(rel_time_counters.itervalues()) 
-			else
-				rel_time_counters = 0 
+			else:
+				rel_time_counters[filename] = 0 
 			files.append(filename)
 
 		with open("csvs/" + filename + ".csv", "a") as f:
@@ -225,6 +249,8 @@ if __name__ == '__main__':
 			#test = ...
 		else:
 			protocol = sys.argv[1]
+
+	print "Starting: {}".format(protocol)
 
 	test("/tmp/perf2file", protocol=protocol)
 	__generate_csv("/tmp/perf2file")
