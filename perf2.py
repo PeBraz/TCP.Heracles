@@ -33,7 +33,7 @@ default_cmd = "iperf -c {} -t {} -Z {} -y C -i 1"
 
 target = HOST_MACHINE_IP 
 time_p_client = 5
-num_clients = 500
+num_clients = 300
 
 
 
@@ -230,6 +230,69 @@ call("gnuplot < /tmp/gnuplot.gp".split())
 """
 
 
+def __get_csv_statistics(folder, field="speed"):
+	"""
+		Get all data from the folder argument, opens all the csv files, calculating the max/min/avg
+		for each file and the group of files
+
+		@folder		where the .csv files are located
+		@field 		of each file to collect the statistics
+		
+		@returns 2tuple: first position is a struct with max/min/mean for all the files
+						second position is a list of structs with max/min/avg for all the files
+
+						ex: (total, points) = __get_data(".")
+							print total.min, total.max, total.mean
+							for p in points:
+								print p.min, p.max, p.avg
+	"""
+
+	if field not in ["speed", "size"]:
+		raise Exception("Invalid attribute for 'field'")
+
+	matcher_ordered_csv = re.compile("(?P<rel_time>\d+),{}".format(match_str))
+	files = os.listdir(folder)
+
+	data_points = []
+	data_total = (0,0,0)
+	total_points = 0
+	mean_of_average_arr = []
+
+	for file in files:
+		if file.endswith(".csv"):
+			with open(folder +"/"+ file) as f:
+				data = f.read()
+
+			matches = re.finditer(matcher_ordered_csv, data)
+			values = [int(m.group(field)) for m in matches]
+			if file == "34872.csv":
+				print values
+			point = (max(values), min(values), sum(values) / float(len(values)))
+
+			data_points.append(point)
+			total_points += len(values)
+
+			data_total = (max(point[0], data_total[0]),
+							min(point[1], data_total[1]), 
+							data_total[2] + sum(values))
+
+			#mean_of_average_arr.append(point[2])
+
+	#mean_of_average_arr.sort()
+	#mean = mean_of_average_arr[len(mean_of_average_arr)/2]
+
+
+	data_total = data_total[0], data_total[1], data_total[2] / float(total_points)
+
+	return data_total, data_points
+
+
+def get_csv_statistics(folder):
+	total, points = __get_csv_statistics(folder)
+	for p in points:
+		print "avg: {}Mb;".format(to_mega(p[2])) 
+	print "max: {}Mb; min: {}Mb; avg: {}Mb".format(*map(to_mega, total))
+
 
 if __name__ == '__main__':
 
@@ -239,6 +302,8 @@ if __name__ == '__main__':
 	#	./perf2.py --seq 
 	# 	./perf2.py reno
 
+	#	./perf2.py
+
 	protocol = "heracles"
 	test = master_slave_test
 
@@ -247,6 +312,10 @@ if __name__ == '__main__':
 			print "Still not finished, come back in a month or two"
 			sys.exit(0)
 			#test = ...
+		elif sys.argv[1] == "--stat":
+			if len(sys.argv) != 3: sys.exit(1)
+			get_csv_statistics(sys.argv[2])
+			sys.exit(0)
 		else:
 			protocol = sys.argv[1]
 
