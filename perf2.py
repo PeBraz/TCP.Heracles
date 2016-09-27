@@ -232,13 +232,18 @@ call("gnuplot < /tmp/gnuplot.gp".split())
 
 def __get_csv_statistics(folder, field="speed"):
 	"""
+		TODO: 	1. accept argument for type test (ms, seq)
+				2. split master from slave: give master total/ slave total
+				3. add mean deviation calculation master/slave
+				4. ??? profit
+
 		Get all data from the folder argument, opens all the csv files, calculating the max/min/avg
 		for each file and the group of files
 
 		@folder		where the .csv files are located
 		@field 		of each file to collect the statistics
 		
-		@returns 2tuple: first position is a struct with max/min/mean for all the files
+		@returns 2tuple: first position is a struct with max/min/total avg for all the files
 						second position is a list of structs with max/min/avg for all the files
 
 						ex: (total, points) = __get_data(".")
@@ -265,8 +270,7 @@ def __get_csv_statistics(folder, field="speed"):
 
 			matches = re.finditer(matcher_ordered_csv, data)
 			values = [int(m.group(field)) for m in matches]
-			if file == "34872.csv":
-				print values
+			
 			point = (max(values), min(values), sum(values) / float(len(values)))
 
 			data_points.append(point)
