@@ -33,7 +33,7 @@ default_cmd = "iperf -c {} -t {} -Z {} -y C -i 1"
 
 target = HOST_MACHINE_IP 
 time_p_client = 5
-num_clients = 300
+num_clients = 100
 
 
 
@@ -270,7 +270,7 @@ def __get_csv_statistics(folder, field="speed"):
 
 			matches = re.finditer(matcher_ordered_csv, data)
 			values = [int(m.group(field)) for m in matches]
-			
+
 			point = (max(values), min(values), sum(values) / float(len(values)))
 
 			data_points.append(point)
@@ -291,7 +291,120 @@ def __get_csv_statistics(folder, field="speed"):
 	return data_total, data_points
 
 
+
+def __list_statistics(l):
+	"""
+		Calculates an assortment of statistics from a list received 
+
+		@l 			list of integers to calculate
+		@returns 	dictionary with max, min, avg, mean and mdev of list
+	"""
+
+	d = dict(
+		max=max(l),
+		min=min(l),
+		avg=sum(l) / float(len(l)),
+		mean=l[len(l)/2],
+	)
+	d["mdev"] = sum(map(lambda x: abs(d["avg"] - x), l)) / float(len(l))
+	return d
+
+
+def get_listfiles_csv_statistics(files, re_csv_match, re_group, folder=None):
+	"""
+		List csv statistics from a @folder given, and @files inside that @folder
+
+		@files 			list of files from which to create statistics
+		@re_csv_match	string/compiled string to use for parsing the csv data
+		@re_group		group to return field from which to calculate statistics
+		@folder 		of the files (optional)
+
+		@returns 		2tuple of @files statistics:
+							- first position is for total
+							- second for list of each individual file
+						
+						Each statistic is a dictionary with fields:
+							- max
+							- min
+							- avg
+							- mean
+							- mdev
+
+	"""
+
+	all_values = []
+	stats_list = []
+
+	for file in files:
+		if not file.endswith(".csv"):
+			continue
+
+	 	with open("{}/{}".format(folder, file) if folder else file) as f:
+	 		data = f.read()
+
+	 	matches = re.finditer(re_csv_match, data)
+		values = [int(m.group(re_group)) for m in matches]
+
+
+		file_stats = __list_statistics(values)
+		stats_list.append(file_stats)
+
+		all_values.extend(values)
+
+	total_stats = __list_statistics(all_values)
+
+	return total_stats, stats_list
+
+
+
+
+
+def get_mstest_statistics(folder):
+	"""
+		Get statistics from a master-slave test results, printing resulst to stdout. 
+		Results are given for speed and total upload size 
+		and are separated in master, slave and sum of both
+
+		@folder		containing the csv files to reads, 1 files is the master, rest are slaves
+
+	"""
+
+	matcher_ordered_csv = re.compile("(?P<rel_time>\d+),{}".format(match_str))
+	
+	speed_stat_caller = lambda files:\
+		get_listfiles_csv_statistics(files, matcher_ordered_csv,"speed", folder=folder) 
+
+
+	files = filter(lambda f: f.endswith(".csv"), os.listdir(folder))
+
+	files.sort()
+	if len(files) > 0:
+		master_total, _ = speed_stat_caller(files[:1])
+	else:
+		raise Exception("[Error]: No master File  found")
+
+	slaves_total, slaves_list = speed_stat_caller(files[1:])
+
+	sum_statistics, _ = speed_stat_caller(files) 
+
+	print "Throughput:"
+	print "Slaves - avg: {} Mb/s mdev: {} Mb/s"\
+				.format(to_mega(slaves_total["avg"]), to_mega(slaves_total["mdev"]))
+	print "Master - avg: {} Mb/s mdev: {} Mb/s"\
+				.format(to_mega(master_total["avg"]), to_mega(master_total["mdev"]))
+	print "Sum - avg: {} Mb/s mdev: {} Mb/s"\
+				.format(to_mega(sum_statistics["avg"]), to_mega(sum_statistics["mdev"]))
+
+
+
+
 def get_csv_statistics(folder):
+
+
+	matcher_ordered_csv = re.compile("(?P<rel_time>\d+),{}".format(match_str))
+
+
+
 	total, points = __get_csv_statistics(folder)
 	for p in points:
 		print "avg: {}Mb;".format(to_mega(p[2])) 
@@ -311,6 +424,37 @@ if __name__ == '__main__':
 	protocol = "heracles"
 	test = master_slave_test
 
+	i = 1
+	while i < len(sys.argv):
+		if sys.argv[i] == "--seq":
+			test = sequence_test
+
+		elif sys.argv[i] == "--ms":
+			test = master_slave_test
+
+		elif sys.argv[i] == "--statms":
+			i += 1
+			if i < len(sys.argv):
+				get_mstest_statistics(sys.argv[i])
+				#get_csv_statistics(sys.argv[i + 1])
+				sys.exit(0)
+			else:
+				raise Exception("[ERROR] '--stat' flag requires a folder argument")
+
+		elif sys.argv[i] == "--proto":
+			i+=1
+			if i < len(sys.argv):
+				protocol = sys.argv[i]
+			else: 
+				raise Exception("[ERROR] '--proto' flag requires a congestion protocol argument")
+		else:
+			pass
+			#protocol: heracles; test: master-slave
+
+		i += 1
+
+
+	"""
 	if len(sys.argv) > 1:
 		if sys.argv[1] == "--seq": # sequential mode
 			print "Still not finished, come back in a month or two"
@@ -322,8 +466,14 @@ if __name__ == '__main__':
 			sys.exit(0)
 		else:
 			protocol = sys.argv[1]
+	"""
 
 	print "Starting: {}".format(protocol)
+
+	try:
+		call("rm -r csvs")
+	except:
+		pass
 
 	test("/tmp/perf2file", protocol=protocol)
 	__generate_csv("/tmp/perf2file")
