@@ -63,7 +63,6 @@ def parallel_test(filename, protocol="heracles"):
 	f.close()
 
 
-
 def sequence_test(filename, protocol="heracles"):
 	"""
 		Sequence test, connections appear in sequence, ending after the next one starts
@@ -474,6 +473,7 @@ if __name__ == '__main__':
 				sys.exit(0)
 			else:
 				raise Exception("[ERROR] '--stat' flag requires a folder argument")
+				
 		elif sys.argv[i] == "--par":
 			test = parallel_test
 
