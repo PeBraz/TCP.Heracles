@@ -32,8 +32,35 @@ match_str = ("(?P<time>\d+),(?P<srcipv4>\d+\.\d+\.\d+\.\d+),(?P<srcport>\d+),"
 default_cmd = "iperf -c {} -t {} -Z {} -y C -i 1"
 
 target = HOST_MACHINE_IP 
-time_p_client = 5
-num_clients = 100
+time_p_client = 10
+num_clients = 1
+
+def parallel_test(filename, protocol="heracles"):
+	"""
+		Run different clients in parallel
+	"""
+
+	client = lambda time, id: call(default_cmd.format(target, time, protocol).split(), stdout=f)
+	f = open(filename, "w")
+
+	threads = [Thread(target=client, args=(time_p_client, i+1)) for i in range(num_clients)]
+
+	if time_p_client < 2: 
+		raise Exception("Time per client must be higher than 2.")
+
+	for thr in threads:
+		thr.start()
+
+	alive = time_p_client
+	while alive > 0:
+		print "{} seconds left.".format(alive)
+		time.sleep(1)
+		alive -= 1
+
+	for thr in threads:
+		thr.join()
+
+	f.close()
 
 
 
@@ -50,13 +77,22 @@ def sequence_test(filename, protocol="heracles"):
 		raise Exception("Time per client must be higher than 2.")
 
 	i = 0
-	thr[i].start()
+	for thr in threads:
+		thr.start()
+		print "{}% - ({}/{})".format((i+1)*100 / num_clients,i+1,num_clients)
+		time.sleep(time_p_client - 5)
+		i += 1
+	"""
 	while i + 1 < len(threads):
-		time.sleep(time_p_client - 1)
-		thr[i+1].start()
-		thr[i].join()
-	
-	thr[-1].join()
+		print "{}% - ({}/{})".format((i+1)*100 / num_clients,i+1,num_clients)
+		time.sleep(1)
+		threads[i+1].start()
+		i+=1 
+	"""
+
+	for thr in threads:
+		thr.join()
+
 
 	f.close()
 
@@ -220,14 +256,12 @@ def __generate_csv(filename):
 
 
 
-"""
-plots = ", ".join(gnuplot_base_plot.format(file, "speed") for file in files)
+	plots = ", ".join(gnuplot_base_plot.format(file, "speed") for file in files)
 
-with open("/tmp/gnuplot.gp", "w") as f:
-	f.write(gnuplot_base.format(fname="heya",plots=plots))
+	with open("/tmp/gnuplot.gp", "w") as f:
+		f.write(gnuplot_base.format(fname="heya",plots=plots))
 
-call("gnuplot < /tmp/gnuplot.gp".split())
-"""
+	call("gnuplot < /tmp/gnuplot.gp".split())
 
 
 def __get_csv_statistics(folder, field="speed"):
@@ -440,6 +474,8 @@ if __name__ == '__main__':
 				sys.exit(0)
 			else:
 				raise Exception("[ERROR] '--stat' flag requires a folder argument")
+		elif sys.argv[i] == "--par":
+			test = parallel_test
 
 		elif sys.argv[i] == "--proto":
 			i+=1

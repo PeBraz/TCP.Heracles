@@ -121,10 +121,10 @@ void __hydra_remove_node(struct heracles* heracles)
 {
 	list_del(&heracles->node);
 	if (heracles->group->size == 1){
-		printk(KERN_INFO "REMOVED GROUP h:%d; g:%d;\n", heracles->id, heracles->group->id);
+		//printk(KERN_INFO "REMOVED GROUP h:%d; g:%d;\n", heracles->id, heracles->group->id);
 		hydra_remove_group(heracles, 1);
 	} else {
-		printk(KERN_INFO "LEFT GROUP h:%d; g:%d size:%d;\n", heracles->id, heracles->group->id, heracles->group->size-1);
+		//printk(KERN_INFO "LEFT GROUP h:%d; g:%d size:%d;\n", heracles->id, heracles->group->id, heracles->group->size-1);
 		--heracles->group->size;
 		heracles->group = NULL;
 		//should i do more stuff here???
@@ -149,7 +149,7 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 		} else if (res > 0) {
 			node = &((*node)->rb_right);
 		} else {
-			printk(KERN_INFO "FOUND PREEXISTING GROUP h:%d; g:%d;\n",heracles->id, group->id);
+			//printk(KERN_INFO "FOUND PREEXISTING GROUP h:%d; g:%d;\n",heracles->id, group->id);
 			hydra_insert_in_group(group, heracles);
 			return group;
 		}
@@ -166,7 +166,7 @@ struct hydra_group * hydra_insert_in_subnet(struct hydra_subnet *sub, struct her
 	///////////////////////////////////////////////////////////////
 
 
-	printk(KERN_INFO "CREATED GROUP h:%d; g:%d;\n", heracles->id, group->id);
+	//printk(KERN_INFO "CREATED GROUP h:%d; g:%d;\n", heracles->id, group->id);
 
 	rb_link_node(&group->node, parent, node);
 	rb_insert_color(&group->node, &group->subnet->tree);

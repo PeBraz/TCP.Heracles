@@ -16,10 +16,15 @@ MODULE_DESCRIPTION("TCP Heracles");
 #define MIN_ACKS 3 
 // error while deciding on stalling an upper connection (cwnd stalls if CWND_ERROR + cwnd average > cwnd )
 #define CWND_ERROR 10
+
+#ifdef HERACLES_DEBUG_FLAG
 #define HERACLES_SOCK_DEBUG(tp, her)\
 	do {\
 		printk(KERN_INFO "%p %u %d %d %d %d %d %d %d\n", her, her->inet_addr, tp->packets_out, tp->snd_cwnd, tp->snd_ssthresh, tp->mss_cache, her->rtt, tp->srtt_us, tp->mdev_us);\
-	} while (0);\
+	} while (0);
+#else
+#define HERACLES_SOCK_DEBUG(tp, her)
+#endif
 
 void heracles_try_enter_ca(struct heracles *heracles, u32 ssthresh);
 void heracles_try_leave_ca(struct heracles *heracles);
@@ -205,7 +210,7 @@ enum heracles_event heracles_poll_event(struct heracles *heracles)
 			heracles->events_ts[HER_JOIN] = heracles->group->events[HER_JOIN].ts;
 			heracles->events_ts[HER_LEAVE] = heracles->group->events[HER_LEAVE].ts;
 			heracles->events_ts[HER_LOSS] = heracles->group->events[HER_LOSS].ts;
-			printk(KERN_INFO "POLL %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
+			//printk(KERN_INFO "POLL %p: %s -> %d\n", heracles, (char*[]){"JOIN","LOSS","LEAVE"}[event], heracles->group->events[event].ts);
 			return (enum heracles_event)event;
 		}
 	}
